@@ -1,0 +1,67 @@
+name: Seite und Marktdaten
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "9 0,8,16 * * *"   # kurz nach jedem 8h-Schluss (UTC)
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Letzte Marktdaten holen
+        uses: actions/cache/restore@v4
+        with:
+          path: market.json
+          key: market-${{ github.run_id }}
+          restore-keys: market-
+
+      - name: Marktdaten von Hyperliquid laden
+        run: |
+          if [ -f market.json ]; then prev=market.json; else prev=seed/market.json; fi
+          python3 refresh.py new.json --prev "$prev" > /dev/null
+          mv new.json market.json
+
+      - name: Marktdaten für den nächsten Lauf merken
+        uses: actions/cache/save@v4
+        with:
+          path: market.json
+          key: market-${{ github.run_id }}
+
+      - name: Seite zusammenstellen
+        run: |
+          mkdir -p site/data
+          cp index.html manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png site/
+          cp market.json site/data/market.json
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+      # GitHub pausiert Zeitpläne in öffentlichen Repos nach 60 Tagen ohne Commit; das hält ihn aktiv.
+      - name: Zeitplan aktiv halten
+        if: github.event_name == 'schedule'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/pages.yml/enable" || true

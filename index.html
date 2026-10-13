@@ -1,0 +1,1405 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Citrini Long/Short</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="theme-color" content="#F2F3EE" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0F1311" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Citrini L/S">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon-192.png" type="image/png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,700&family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap">
+<style>
+/* Layout: a desk sheet. Summary strip, the paper performance, today's tickets, the book, then hedge facts and settings side by side. */
+:root {
+  --bg: #F2F3EE;
+  --panel: #FFFFFF;
+  --ink: #131916;
+  --ink-2: #47534E;
+  --muted: #727E78;
+  --line: #DCE1DA;
+  --base: #B3BCB6;
+  --accent: #2B44C4;
+  --accent-bg: #E7EBFB;
+  --long: #16774A;
+  --long-bg: #E2F1E8;
+  --short: #B03A2F;
+  --short-bg: #F7E3E0;
+  --warn: #8A5A00;
+  --warn-bg: #FAEFD6;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-ui: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-num: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1311; --panel: #161B19; --ink: #E4EAE6; --ink-2: #AAB6B0; --muted: #808C86; --line: #27312D; --base: #3E4A45;
+    --accent: #93A4FF; --accent-bg: #1E2550;
+    --long: #52C98F; --long-bg: #12301F; --short: #F2806F; --short-bg: #3B1914; --warn: #F1B84E; --warn-bg: #3A2C0F;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1311; --panel: #161B19; --ink: #E4EAE6; --ink-2: #AAB6B0; --muted: #808C86; --line: #27312D; --base: #3E4A45;
+  --accent: #93A4FF; --accent-bg: #1E2550;
+  --long: #52C98F; --long-bg: #12301F; --short: #F2806F; --short-bg: #3B1914; --warn: #F1B84E; --warn-bg: #3A2C0F;
+  color-scheme: dark;
+}
+*, *::before, *::after { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 22px 44px; display: grid; gap: 18px; }
+
+/* header */
+.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
+.eyebrow { margin: 0 0 4px; font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+h1 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: clamp(26px, 4vw, 34px); line-height: 1.05; letter-spacing: -.01em; text-wrap: balance; }
+.sub { margin: 6px 0 0; color: var(--ink-2); }
+.stamp { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--ink-2); font-size: 12.5px; }
+.stamp .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.stamp.fresh .dot { background: var(--long); }
+.stamp.stale { border-color: var(--warn); color: var(--warn); background: var(--warn-bg); }
+.stamp.stale .dot { background: var(--warn); }
+
+/* tiles */
+.tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+.tile { background: var(--panel); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; align-content: start; }
+.tile .k { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.tile .v { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 21px; font-weight: 600; letter-spacing: -.02em; }
+.tile .s { font-size: 12px; color: var(--ink-2); }
+.tiles.mini { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.tiles.mini .tile { padding: 10px 12px; }
+.tiles.mini .v { font-size: 17px; }
+
+/* cards */
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; display: grid; gap: 12px; min-width: 0; }
+.card-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 10px 16px; }
+h2 { margin: 0; font-family: var(--font-display); font-weight: 600; font-size: 18px; letter-spacing: -.005em; }
+.hint { margin: 2px 0 0; color: var(--ink-2); font-size: 13px; max-width: 70ch; }
+.btn { font: inherit; font-weight: 600; font-size: 13px; padding: 7px 12px; border-radius: 8px; border: 1px solid var(--accent); background: var(--accent); color: var(--panel); cursor: pointer; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible, .legend button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* performance */
+.seg { display: inline-flex; flex-wrap: wrap; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
+.seg button { font: inherit; font-size: 12.5px; font-weight: 600; color: var(--ink-2); background: transparent; border: 0; border-radius: 999px; padding: 5px 11px; cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.seg button:disabled { opacity: .4; cursor: default; }
+.seg button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.perf-main { display: grid; gap: 12px; min-width: 0; }
+.perf-main > * { min-width: 0; }
+.perf-head { display: grid; gap: 4px; }
+.hero { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+.hero-v { font-family: var(--font-ui); font-weight: 600; font-size: clamp(34px, 6vw, 48px); line-height: 1; letter-spacing: -.02em; }
+.chip.up { color: var(--long); background: var(--long-bg); }
+.chip.down { color: var(--short); background: var(--short-bg); }
+.chart { margin: 0; position: relative; display: grid; gap: 10px; min-width: 0; }
+.plot { position: relative; min-height: 220px; touch-action: pan-y; border-radius: 6px; cursor: crosshair; }
+.plot:focus { outline: none; }
+.plot:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
+.plot svg { display: block; overflow: visible; }
+.plot text { font-family: var(--font-num); font-size: 11px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+.plot .unit { font-family: var(--font-ui); }
+.plot .grid { stroke: var(--line); stroke-width: 1; }
+.plot .zero, .plot .mark { stroke: var(--base); stroke-width: 1; }
+.plot .mark-label { font-family: var(--font-ui); fill: var(--ink-2); }
+.plot .line { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot .line.ls { stroke: var(--accent); }
+.plot .line.lo { stroke: var(--muted); }
+.plot .wash { fill: var(--accent); opacity: .08; }
+.plot .dot { stroke: var(--panel); stroke-width: 2; }
+.plot .dot.ls { fill: var(--accent); }
+.plot .dot.lo { fill: var(--muted); }
+.plot .cross { stroke: var(--ink-2); stroke-width: 1; opacity: .55; }
+.tip { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; min-width: 168px; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 22px rgba(0, 0, 0, .14); font-size: 12.5px; display: grid; gap: 4px; }
+.tip-date { color: var(--ink-2); font-size: 12px; }
+.tip-row { display: grid; grid-template-columns: 14px auto 1fr; align-items: center; gap: 8px; color: var(--ink-2); }
+.tip-row b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+.key { display: inline-block; width: 14px; height: 2px; border-radius: 2px; background: currentColor; flex: none; }
+.k-ls { color: var(--accent); }
+.k-lo { color: var(--muted); }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 20px; font-size: 13px; color: var(--ink-2); }
+.legend button { font: inherit; color: inherit; background: none; border: 0; padding: 2px 0; display: inline-flex; align-items: center; gap: 8px; cursor: pointer; text-align: left; }
+.legend button[aria-pressed="false"] { opacity: .45; }
+.legend b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
+details.more { border-top: 1px solid var(--line); padding-top: 10px; }
+details.more summary { cursor: pointer; font-weight: 600; font-size: 13.5px; width: fit-content; }
+details.more .hint { margin-top: 6px; }
+.bars { display: grid; gap: 4px; margin-top: 10px; max-width: 720px; }
+.bar-row { display: grid; grid-template-columns: 4.8em 3.4em minmax(0, 1fr) 6.2em; align-items: center; gap: 10px; font-size: 13px; }
+.bar-row .tok { font-weight: 600; }
+.bar-row .sd { color: var(--muted); font-size: 12px; }
+.bar-row .val { font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+.bar-track { position: relative; height: 14px; }
+.bar-track::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--base); }
+.bar { position: absolute; top: 3px; height: 8px; min-width: 2px; }
+.bar.pos { left: 50%; border-radius: 0 4px 4px 0; }
+.bar.neg { right: 50%; border-radius: 4px 0 0 4px; }
+.bar.long { background: var(--long); }
+.bar.short { background: var(--short); }
+.bar.spot { background: var(--muted); }
+.table-scroll { max-height: 320px; overflow: auto; margin-top: 8px; }
+.table-scroll th, .table-scroll td { padding: 6px 8px; }
+.perf-msg { margin: 0; padding: 14px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-2); }
+
+/* tickets */
+.tickets { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.tickets li { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 4px 12px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.tickets li.empty { display: block; color: var(--ink-2); border-style: dashed; }
+.tickets .what { color: var(--ink-2); font-size: 13px; }
+.tickets .qty { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; }
+.tickets .usd { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
+.copy-fallback { width: 100%; min-height: 120px; font-family: var(--font-num); font-size: 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+
+/* chips */
+.chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.chip.buy { color: var(--long); background: var(--long-bg); }
+.chip.sell { color: var(--short); background: var(--short-bg); }
+.chip.warn { color: var(--warn); background: var(--warn-bg); }
+.chip.ok { color: var(--ink-2); background: var(--bg); }
+.side-long { color: var(--long); font-weight: 600; }
+.side-short { color: var(--short); font-weight: 600; }
+.side-none { color: var(--muted); }
+
+/* tables */
+.table-wrap { overflow-x: auto; min-width: 0; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; }
+td.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+tbody tr.group td { padding-top: 14px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 0; }
+td.token { font-weight: 600; }
+td.muted { color: var(--muted); }
+.qty-in { width: 9.5em; font: inherit; font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); }
+
+/* lower grid */
+.lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+@media (max-width: 880px) { .lower { grid-template-columns: minmax(0, 1fr); } }
+.facts { margin: 0; display: grid; gap: 0; }
+.facts div { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--line); }
+.facts dt { color: var(--ink-2); }
+.facts dd { margin: 0; font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* settings */
+.settings { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; }
+.settings label { display: grid; gap: 4px; font-size: 12.5px; color: var(--ink-2); }
+.settings .wide { grid-column: 1 / -1; }
+.settings input[type="number"], .settings input[type="date"], .settings select { font: inherit; font-family: var(--font-num); font-size: 13px; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--ink); width: 100%; min-width: 0; }
+.settings input[type="range"] { width: 100%; accent-color: var(--accent); }
+.settings output { font-family: var(--font-num); color: var(--ink); }
+.settings .check { display: flex; align-items: center; gap: 8px; color: var(--ink); }
+fieldset { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px 12px; margin: 0; min-width: 0; }
+legend { padding: 0 6px; font-size: 12.5px; color: var(--ink-2); }
+.weights { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.weights label { display: grid; grid-template-columns: 1fr 4.2em; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; font-size: 13px; }
+.weights label span.pct { grid-column: 1 / -1; font-weight: 400; font-size: 11.5px; color: var(--muted); margin-top: -4px; }
+.alts { display: flex; flex-wrap: wrap; gap: 8px 14px; }
+.alts label { display: flex; align-items: center; gap: 6px; color: var(--ink); font-weight: 600; }
+.save { margin: 0; font-size: 12.5px; color: var(--muted); min-height: 1.2em; }
+.notice { padding: 10px 12px; border-radius: 8px; background: var(--warn-bg); color: var(--warn); font-weight: 500; }
+footer { color: var(--muted); font-size: 12.5px; display: grid; gap: 6px; max-width: 90ch; }
+footer p { margin: 0; }
+@media (prefers-reduced-motion: no-preference) { .tile .v, .tickets li { transition: color .2s ease; } }
+
+/* standalone page */
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; }
+.wrap { padding-left: max(16px, env(safe-area-inset-left)); padding-right: max(16px, env(safe-area-inset-right)); padding-bottom: max(44px, env(safe-area-inset-bottom)); }
+.stamp.live .dot { background: var(--long); }
+@media (prefers-reduced-motion: no-preference) { .stamp.live .dot { animation: pulse 2s ease-out infinite; } }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--long) 55%, transparent); } 70%, 100% { box-shadow: 0 0 0 7px transparent; } }
+.template { margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--accent-bg); color: var(--ink); }
+.btn.ghost { background: transparent; color: var(--accent); justify-self: start; }
+.share { display: grid; gap: 6px; }
+</style>
+</head>
+<body>
+
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Hyperliquid live · beta-neutraler Pair-Trade</p>
+      <h1>Citrini Long/Short</h1>
+      <p class="sub" id="sub">Citrini-Token long · ETH und Alt-Korb short</p>
+    </div>
+    <div class="stamp" id="stamp" role="status"><span class="dot"></span><span id="stampText">Verbinde mit Hyperliquid …</span></div>
+  </header>
+
+  <p class="notice" id="notice" hidden></p>
+  <p class="template" id="templateNote" hidden>Vorlage mit Beispielwerten. Deine eigenen Einstellungen lädst du einmal über deinen persönlichen Link, danach merkt sich dieser Browser sie.</p>
+
+  <section class="tiles" aria-label="Kennzahlen">
+    <div class="tile"><span class="k">Long-Book</span><span class="v" id="tLong">–</span><span class="s" id="tLongS">&nbsp;</span></div>
+    <div class="tile"><span class="k">Short-Book</span><span class="v" id="tShort">–</span><span class="s" id="tShortS">&nbsp;</span></div>
+    <div class="tile"><span class="k">Rest-Volatilität</span><span class="v" id="tVol">–</span><span class="s" id="tVolS">&nbsp;</span></div>
+    <div class="tile"><span class="k">Tagesschwankung 1σ</span><span class="v" id="tDay">–</span><span class="s" id="tDayS">&nbsp;</span></div>
+    <div class="tile"><span class="k">Funding netto</span><span class="v" id="tFund">–</span><span class="s" id="tFundS">&nbsp;</span></div>
+    <div class="tile"><span class="k">Margin</span><span class="v" id="tMargin">–</span><span class="s" id="tMarginS">&nbsp;</span></div>
+  </section>
+
+  <section class="card" aria-labelledby="hPerf">
+    <div class="card-head">
+      <div>
+        <h2 id="hPerf">Wertentwicklung</h2>
+        <p class="hint">Das Buch mit deinen Einstellungen, simuliert statt gehandelt: täglich angepasst wie unter „Heute handeln“, mit Funding und Gebühren.</p>
+      </div>
+      <div class="seg" id="periods" role="group" aria-label="Zeitraum"></div>
+    </div>
+    <p class="perf-msg" id="perfMsg">Sobald die Marktdaten da sind, steht hier der Verlauf.</p>
+    <div class="perf-main" id="perfMain" hidden>
+      <div class="perf-head">
+        <p class="hero"><span class="hero-v" id="pfValue">–</span><span class="chip" id="pfPct"></span></p>
+        <p class="hint" id="pfSub">&nbsp;</p>
+      </div>
+      <figure class="chart">
+        <div class="plot" id="pfPlot" tabindex="0" role="img" aria-label="Verlauf"></div>
+        <div class="tip" id="pfTip" hidden></div>
+        <figcaption class="legend">
+          <button type="button" data-s="ls" aria-pressed="true"><span class="key k-ls"></span>Long/Short-Buch <b id="lgLs"></b></button>
+          <button type="button" data-s="lo" aria-pressed="true"><span class="key k-lo"></span>Nur Long-Basket, ohne Hedge <b id="lgLo"></b></button>
+        </figcaption>
+      </figure>
+      <div class="tiles mini" aria-label="Zusammensetzung">
+        <div class="tile"><span class="k">Long-Seite</span><span class="v" id="pLong">–</span><span class="s" id="pLongS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Short-Seite</span><span class="v" id="pShort">–</span><span class="s" id="pShortS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Funding</span><span class="v" id="pFund">–</span><span class="s" id="pFundS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Gebühren</span><span class="v" id="pFees">–</span><span class="s" id="pFeesS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Größter Rückgang</span><span class="v" id="pDD">–</span><span class="s" id="pDDS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Schwankung p. a.</span><span class="v" id="pVol">–</span><span class="s" id="pVolS">&nbsp;</span></div>
+      </div>
+      <details class="more">
+        <summary>Beitrag je Token</summary>
+        <p class="hint">Kursgewinn plus Funding je Position im gewählten Zeitraum, ohne Gebühren. Grün sind Longs, rot Shorts; nach rechts heißt Gewinn.</p>
+        <div class="bars" id="pfBars"></div>
+      </details>
+      <details class="more">
+        <summary>Verlauf als Tabelle</summary>
+        <div class="table-wrap table-scroll">
+          <table>
+            <thead><tr><th>Datum</th><th class="num">Long/Short</th><th class="num">Nur Long</th></tr></thead>
+            <tbody id="pfTable"></tbody>
+          </table>
+        </div>
+      </details>
+      <p class="hint" id="pfMethod">&nbsp;</p>
+    </div>
+  </section>
+
+  <section class="card" aria-labelledby="hTickets">
+    <div class="card-head">
+      <div>
+        <h2 id="hTickets">Heute handeln</h2>
+        <p class="hint" id="bandHint">Nur Positionen, die außerhalb des Bands liegen.</p>
+        <p class="hint">Den Hebel stellst du pro Position ein. Öffne alles im Cross-Margin bzw. Portfolio Margin, nicht Isolated, sonst kann eine Seite einzeln liquidiert werden.</p>
+      </div>
+      <button type="button" class="btn" id="copyBtn" disabled>Orders kopieren</button>
+    </div>
+    <ul class="tickets" id="tickets"><li class="empty">Sobald die Marktdaten da sind, stehen hier die Orders für heute.</li></ul>
+    <textarea id="copyFallback" class="copy-fallback" readonly hidden aria-label="Orders zum Kopieren"></textarea>
+  </section>
+
+  <section class="card" aria-labelledby="hBook">
+    <div class="card-head">
+      <div>
+        <h2 id="hBook">Positionen</h2>
+        <p class="hint">Trag nach jedem Trade deine aktuellen Stückzahlen ein, Shorts als negative Zahl. Ziel und Order rechnen sich sofort neu.</p>
+      </div>
+    </div>
+    <div class="table-wrap">
+      <table class="book">
+        <thead><tr><th>Token</th><th>Seite</th><th class="num">Kurs</th><th class="num">Ziel $</th><th class="num">Ziel Stück</th><th class="num">Hebel</th><th class="num">Margin</th><th class="num">Aktuell Stück</th><th>Abweichung</th><th>Order</th></tr></thead>
+        <tbody id="bookBody"><tr><td colspan="10" class="muted">Marktdaten werden geladen …</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="lower">
+    <section class="card" aria-labelledby="hHedge">
+      <h2 id="hHedge">Hedge</h2>
+      <dl class="facts">
+        <div><dt>Beta Long-Basket zu ETH</dt><dd id="fBook">–</dd></div>
+        <div><dt>Beta Alt-Korb zu ETH</dt><dd id="fAlt">–</dd></div>
+        <div><dt>ETH-Anteil am Hedge</dt><dd id="fShare">–</dd></div>
+        <div><dt>Beta-Exposure long / short</dt><dd id="fExpo">–</dd></div>
+        <div><dt>HYPE spot</dt><dd id="fHype">–</dd></div>
+      </dl>
+      <p class="hint" id="methodHint">&nbsp;</p>
+      <div class="table-wrap">
+        <table class="mini">
+          <thead><tr><th>Token</th><th class="num">Beta</th><th class="num">Funding jetzt</th><th class="num">Funding 30 T</th><th class="num">Max. Hebel</th></tr></thead>
+          <tbody id="riskBody"></tbody>
+        </table>
+      </div>
+      <p class="hint">Funding p. a.: positiv heißt, Longs zahlen und Shorts erhalten.</p>
+    </section>
+
+    <section class="card" aria-labelledby="hSettings">
+      <h2 id="hSettings">Einstellungen</h2>
+      <form id="settings" class="settings" novalidate>
+        <label for="sL">Long-Book (USD)<input id="sL" type="number" inputmode="decimal" min="0" step="500"></label>
+        <label for="sBand">Band (± %)<input id="sBand" type="number" inputmode="decimal" min="0" max="100" step="1"></label>
+        <label for="sMin">Mindestorder (USD)<input id="sMin" type="number" inputmode="decimal" min="0" step="10"></label>
+        <label for="sWin">Beta-Fenster<select id="sWin"><option value="60">60 Tage</option><option value="90">90 Tage</option><option value="120">120 Tage</option></select></label>
+        <label for="sShare" class="wide">ETH-Anteil am Hedge: <output id="sShareOut" for="sShare">40 %</output><input id="sShare" type="range" min="0" max="100" step="5"></label>
+        <label for="sLevL">Hebel Longs<input id="sLevL" type="number" min="1" max="40" step="1"></label>
+        <label for="sLevS">Hebel Alt-Shorts<input id="sLevS" type="number" min="1" max="40" step="1"></label>
+        <label for="sLevE">Hebel ETH<input id="sLevE" type="number" min="1" max="40" step="1"></label>
+        <label for="sEq">USDC-Equity<input id="sEq" type="number" inputmode="decimal" min="0" step="100"></label>
+        <label for="sHype">HYPE spot (Stück)<input id="sHype" type="number" inputmode="decimal" min="0" step="1"></label>
+        <label for="sStart">Paper-Start<input id="sStart" type="date"></label>
+        <label for="sHedgeHype" class="check wide"><input id="sHedgeHype" type="checkbox"> HYPE-Spot mit ETH-Short absichern</label>
+        <fieldset class="wide"><legend>Long-Gewichte in % (0 = nicht im Basket)</legend><div class="weights" id="weights"></div></fieldset>
+        <fieldset class="wide"><legend>Alt-Korb, gleich gewichtet</legend><div class="alts" id="alts"></div></fieldset>
+      </form>
+      <div class="share">
+        <button type="button" class="btn ghost" id="shareBtn">Link für ein anderes Gerät kopieren</button>
+        <p class="hint">Der Link enthält deine Einstellungen und Positionen. Schick ihn nur an dich selbst.</p>
+        <textarea id="shareFallback" class="copy-fallback" readonly hidden aria-label="Link zum Kopieren"></textarea>
+      </div>
+      <p class="save" id="saveState" aria-live="polite"></p>
+    </section>
+  </div>
+
+  <footer>
+    <p id="srcNote">Kurse live per WebSocket direkt von Hyperliquid. Verlauf und Funding-Historie lädt eine GitHub Action alle 8 Stunden.</p>
+    <p>Gewichte: deine Vorgabe vom 13.10.2026. Der erste Vorschlag mischte Risk Parity mit Holder-Rendite (Rückkäufe und Ausschüttungen relativ zur Market Cap, DefiLlama).</p>
+    <p>Methode: Tägliche Renditen, alle 8 Stunden gemessen. Der Short ist so groß, dass sein Beta zu ETH das Beta des Long-Baskets ausgleicht. Ein fester Anteil davon liegt in ETH, der Rest gleich verteilt im Alt-Korb. Orders erscheinen nur, wenn eine Position um mehr als das Band vom Ziel abweicht. Rechenhilfe, keine Anlageberatung.</p>
+  </footer>
+</div>
+
+<script>
+/* Pure maths, shared with the daily refresh script (same formulas, same order of operations). */
+window.CLS = (() => {
+  const SQ365 = Math.sqrt(365);
+  const HOUR = 3600000, DAY = 24 * HOUR;
+  const FEE = 0.00045; // Hyperliquid taker fee, base tier
+  const total = v => { let a = 0; for (const x of v) a += x; return a; };
+  const mean = v => total(v) / v.length;
+  const demean = v => { const m = mean(v); return v.map(a => a - m); };
+  const std = v => { const m = mean(v); let a = 0; for (const x of v) a += (x - m) * (x - m); return Math.sqrt(a / (v.length - 1)); };
+  const beta = (y, x) => {
+    const my = mean(y), mx = mean(x);
+    let c = 0, vx = 0;
+    for (let i = 0; i < x.length; i++) { c += (y[i] - my) * (x[i] - mx); vx += (x[i] - mx) * (x[i] - mx); }
+    return c / vx;
+  };
+  const roundTo = (v, d) => { const f = Math.pow(10, d); return Math.round(v * f) / f; };
+
+  /* Everything the hedge needs, computed once: log closes, overlapping daily log returns at every 8h step
+     (and their expm1), and which steps have a return for every token. */
+  function context(m, s) {
+    const C = m.coins, per = m.perDay || 3, N = C.ETH.closes.length;
+    const longs = Object.entries(s.weights).filter(([t, w]) => Number(w) > 0 && C[t]).map(([t, w]) => [t, Number(w)]);
+    const alts = s.alts.filter(t => C[t] && !longs.some(([l]) => l === t));
+    const need = [...longs.map(([t]) => t), ...alts, "ETH", "HYPE"];
+    const lc = {}, ret = {}, ex = {};
+    for (const t of need) {
+      const l = lc[t] = C[t].closes.map(v => (v > 0 ? Math.log(v) : NaN));
+      const r = ret[t] = new Float64Array(N).fill(NaN), e = ex[t] = new Float64Array(N).fill(NaN);
+      for (let i = per; i < N; i++) { r[i] = l[i] - l[i - per]; e[i] = Math.expm1(r[i]); }
+    }
+    const valid = new Uint8Array(N);
+    for (let i = per; i < N; i++) valid[i] = need.every(t => !Number.isNaN(ret[t][i])) ? 1 : 0;
+    return { C, per, N, longs, wsum: total(longs.map(([, w]) => w)), alts, need, lc, ret, ex, valid, ethShare: Number(s.ethShare) };
+  }
+
+  /* Hedge ratios from the overlapping daily log returns at the 8h steps end-n .. end-1. */
+  function hedgeAt(cx, end, n) {
+    const { per, ret, ex, valid, longs, wsum, alts } = cx;
+    const idx = [];
+    for (let i = Math.max(per, end - n); i < end; i++) if (valid[i]) idx.push(i);
+    if (!longs.length || idx.length < 30) return null;
+    const wl = longs.map(([t, w]) => [ex[t], w / wsum]);
+    const y = idx.map(i => { let acc = 0; for (const [e, w] of wl) acc += w * e[i]; return Math.log1p(acc); });
+    const x = idx.map(i => ret.ETH[i]);
+    const a = alts.length ? idx.map(i => { let acc = 0; for (const t of alts) acc += ret[t][i]; return acc / alts.length; }) : null;
+    const bBook = beta(y, x);
+    const bAlt = a ? beta(a, x) : 0;
+    const share = (a && bAlt > 0.2) ? Math.min(1, Math.max(0, cx.ethShare / 100)) : 1;
+    return { idx, y, x, a, bBook, bAlt, share, hEth: share * bBook, hAlt: share < 1 ? (1 - share) * bBook / bAlt : 0, hypeBeta: beta(idx.map(i => ret.HYPE[i]), x) };
+  }
+
+  function targetsFor(cx, h, s, hypePx) {
+    const L = Number(s.L);
+    const tg = {};
+    for (const [t, w] of cx.longs) tg[t] = L * w / cx.wsum;
+    const eth = h.hEth * L + (s.hedgeHype ? h.hypeBeta * Number(s.hypeQty) * hypePx : 0);
+    if (eth > 0) tg.ETH = -eth;
+    if (h.hAlt > 0) for (const t of cx.alts) tg[t] = (tg[t] || 0) - h.hAlt * L / cx.alts.length;
+    return tg;
+  }
+
+  function computePlan(m, s) {
+    const C = m.coins;
+    if (!C || !C.ETH || !C.HYPE) return null;
+    const cx = context(m, s);
+    const per = cx.per, N = C.ETH.closes.length;
+    const n = Math.min(Math.round(s.window) * per, N - per);
+    const h = hedgeAt(cx, N, n);
+    if (!h) return { error: cx.longs.length ? "Zu wenig Kursdaten für das gewählte Fenster." : "Kein Token im Long-Basket." };
+    const { idx, y, x, a, bBook, bAlt, share, hEth, hAlt } = h;
+    const yd = demean(y), xd = demean(x), ad = a ? demean(a) : y.map(() => 0);
+    const resid = yd.map((v, k) => v - hEth * xd[k] - hAlt * ad[k]);
+    const L = Number(s.L);
+    const betas = {};
+    for (const t of cx.need) betas[t] = beta(idx.map(i => cx.ret[t][i]), x);
+    const hypeVal = Number(s.hypeQty) * C.HYPE.mark;
+    const targets = targetsFor(cx, h, s, C.HYPE.mark);
+    const ethN = targets.ETH ? -targets.ETH : 0;
+
+    const pos = s.pos || {};
+    const keys = new Set([...Object.keys(targets), ...Object.keys(pos).filter(k => Number(pos[k]) !== 0)]);
+    const lines = [];
+    for (const t of keys) {
+      const c = C[t];
+      if (!c || !(c.mark > 0)) continue;
+      const dec = c.szDec;
+      const tq = roundTo((targets[t] || 0) / c.mark, dec);
+      const cur = Number(pos[t]) || 0;
+      const dq = roundTo(tq - cur, dec);
+      const dusd = dq * c.mark;
+      const drift = tq !== 0 ? (cur - tq) / Math.abs(tq) : null;
+      const trade = dq !== 0 && ((tq === 0 && cur !== 0) || (drift !== null && Math.abs(drift) >= s.band / 100 && Math.abs(dusd) >= s.minTrade));
+      let action = "";
+      if (tq === 0) action = "Position schließen";
+      else if (tq > 0) action = cur <= 0 ? "Long öffnen" : (dq > 0 ? "Long aufstocken" : "Long reduzieren");
+      else action = cur >= 0 ? "Short öffnen" : (dq < 0 ? "Short aufstocken" : "Short reduzieren");
+      const lev = Math.min(c.maxLev, t === "ETH" ? s.levEth : (tq > 0 ? s.levLong : s.levShort));
+      lines.push({ t, mark: c.mark, dec, tgtUsd: targets[t] || 0, tq, cur, dq, dusd, drift, trade, action, lev, marginUsd: Math.abs(targets[t] || 0) / Math.max(1, lev), fundNow: c.fundNow, fund30: c.fund30, maxLev: c.maxLev });
+    }
+    const longUsd = lines.filter(l => l.tgtUsd > 0).reduce((acc, l) => acc + l.tgtUsd, 0);
+    const shortUsd = lines.filter(l => l.tgtUsd < 0).reduce((acc, l) => acc - l.tgtUsd, 0);
+    const margin = lines.reduce((acc, l) => acc + Math.abs(l.tgtUsd) / Math.max(1, l.lev), 0);
+    const fundPay = lines.filter(l => l.tgtUsd > 0).reduce((acc, l) => acc + l.tgtUsd * l.fund30, 0);
+    const fundRecv = lines.filter(l => l.tgtUsd < 0).reduce((acc, l) => acc - l.tgtUsd * l.fund30, 0);
+    const shortBetaUsd = lines.filter(l => l.tgtUsd < 0).reduce((acc, l) => acc - l.tgtUsd * (l.t === "ETH" ? 1 : (betas[l.t] ?? 1)), 0);
+    return {
+      bBook, bAlt, share, hEth, hAlt, n: idx.length, windowDays: Math.round(n / per), longs: cx.longs, wsum: cx.wsum, alts: cx.alts, betas,
+      unhedged: std(y) * SQ365, resid: std(resid) * SQ365, L, hypeVal, hypeBeta: h.hypeBeta,
+      lines, longUsd, shortUsd, ethUsd: ethN, margin, fundPay, fundRecv, longBetaUsd: bBook * L, shortBetaUsd
+    };
+  }
+
+  /* First 8h step at which every token has a full beta window behind it. */
+  function firstFull(cx, N, n) {
+    let first = 0;
+    for (const t of cx.need) {
+      let i = cx.lc[t].findIndex(v => !Number.isNaN(v));
+      if (i < 0) i = N;
+      first = Math.max(first, i);
+    }
+    return first + cx.per + n - 1;
+  }
+
+  function simRange(m, s) {
+    const C = m.coins;
+    if (!C || !C.ETH || !C.HYPE || !(m.t0 > 0)) return null;
+    const cx = context(m, s);
+    if (!cx.longs.length) return null;
+    const N = C.ETH.closes.length;
+    const k = firstFull(cx, N, Math.round(s.window) * cx.per);
+    return k < N ? { earliest: m.t0 + (k + 1) * m.step, latest: Date.parse(m.asOf) } : null;
+  }
+
+  /* Paper portfolio: open all targets at the first 8h close on or after startMs, rebalance daily at 00:00 UTC
+     with the band rules above, pay funding and taker fees. Value path in USD for the long/short book and,
+     for comparison, the long basket alone. */
+  function simulate(m, s, startMs) {
+    const C = m.coins;
+    if (!C || !C.ETH || !C.HYPE || !(m.t0 > 0)) return null;
+    const cx = context(m, s);
+    if (!cx.longs.length) return null;
+    const { per, need } = cx;
+    const t0 = m.t0, step = m.step, d0 = m.d0;
+    const N = C.ETH.closes.length;
+    const n = Math.round(s.window) * per;
+    let wanted = N;
+    for (let k = 0; k < N; k++) if (t0 + (k + 1) * step >= startMs) { wanted = k; break; }
+    const k0 = Math.max(wanted, firstFull(cx, N, n));
+    if (k0 >= N) return null;
+    const px = {}, fund = {};
+    for (const t of need) {
+      let last = null;
+      px[t] = C[t].closes.map(v => (last = v > 0 ? v : last));
+      fund[t] = C[t].fund || [];
+    }
+    const band = Number(s.band) / 100, minTrade = Number(s.minTrade);
+    const hype = s.hedgeHype ? Number(s.hypeQty) : 0;
+    const portfolio = () => ({ q: {}, pnl: {}, fund: {}, fees: 0, trades: 0, turnover: 0 });
+    const ls = portfolio(), lo = portfolio();
+    let hypePnl = 0;
+
+    const rebalance = (pf, tg, k) => {
+      for (const t of [...new Set([...Object.keys(tg), ...Object.keys(pf.q)])].sort()) {
+        const p = px[t][k];
+        const tq = (tg[t] || 0) / p;
+        const cur = pf.q[t] || 0;
+        const dusd = (tq - cur) * p;
+        const drift = tq ? (cur - tq) / Math.abs(tq) : null;
+        if ((tq === 0 && cur !== 0) || (drift !== null && Math.abs(drift) >= band && Math.abs(dusd) >= minTrade)) {
+          if (tq) pf.q[t] = tq; else delete pf.q[t];
+          pf.fees += Math.abs(dusd) * FEE;
+          pf.turnover += Math.abs(dusd);
+          pf.trades += 1;
+        }
+      }
+    };
+    /* Carry pf from the close of step k for `hours`, ending at the prices pNew(t). */
+    const accrue = (pf, k, pNew, hours) => {
+      const di = Math.floor((t0 + (k + 1) * step - d0) / DAY);
+      for (const [t, q] of Object.entries(pf.q)) {
+        const p0 = px[t][k];
+        pf.pnl[t] = (pf.pnl[t] || 0) + q * (pNew(t) - p0);
+        const f = di < fund[t].length && fund[t][di] != null ? fund[t][di] : 0;
+        pf.fund[t] = (pf.fund[t] || 0) - q * p0 * f / 1e4 * hours / 24;
+      }
+    };
+    const value = (pf, extra = 0) => total(Object.values(pf.pnl)) + total(Object.values(pf.fund)) - pf.fees + extra;
+
+    const T = [], vLs = [], vLo = [];
+    for (let k = k0; k < N; k++) {
+      if (k > k0) {
+        for (const pf of [ls, lo]) accrue(pf, k - 1, t => px[t][k], step / HOUR);
+        hypePnl += hype * (px.HYPE[k] - px.HYPE[k - 1]);
+      }
+      if (k === k0 || (t0 + (k + 1) * step) % DAY === 0) {
+        const h = hedgeAt(cx, k + 1, n);
+        if (h) {
+          const tg = targetsFor(cx, h, s, px.HYPE[k]);
+          rebalance(ls, tg, k);
+          rebalance(lo, Object.fromEntries(Object.entries(tg).filter(([, v]) => v > 0)), k);
+        }
+      }
+      T.push(t0 + (k + 1) * step);
+      vLs.push(value(ls, hypePnl));
+      vLo.push(value(lo));
+    }
+    const tClose = T[T.length - 1];
+    const copy = pf => ({ q: { ...pf.q }, pnl: { ...pf.pnl }, fund: { ...pf.fund }, fees: pf.fees, trades: pf.trades, turnover: pf.turnover });
+    const atClose = [copy(ls), copy(lo), hypePnl];
+    /* The book as of the last 8h close, carried to time `at` at the prices priceOf(t). Cheap enough to
+       call on every live tick. */
+    const markTo = (at, priceOf) => {
+      const a = copy(atClose[0]), b = copy(atClose[1]);
+      let hp = atClose[2];
+      if (at > tClose) {
+        const hours = (at - tClose) / HOUR;
+        for (const pf of [a, b]) accrue(pf, N - 1, priceOf, hours);
+        hp += hype * (priceOf("HYPE") - px.HYPE[N - 1]);
+      }
+      return { ls: value(a, hp), lo: value(b), book: a, longOnly: b, hypePnl: hp };
+    };
+    let book = ls, longOnly = lo;
+    const asOf = Date.parse(m.asOf);
+    if (asOf > tClose) { // mark to the live price
+      const r = markTo(asOf, t => C[t].mark);
+      T.push(asOf);
+      vLs.push(r.ls);
+      vLo.push(r.lo);
+      ({ book, longOnly, hypePnl } = r);
+    }
+    return { t: T, ls: vLs, lo: vLo, k0, clamped: k0 > wanted, book, longOnly, hypePnl, tClose, markTo,
+      longs: cx.longs.map(([t]) => t), alts: cx.alts };
+  }
+
+  return { computePlan, simulate, simRange, std };
+})();
+</script>
+
+<script>
+(() => {
+  "use strict";
+  const LONG_ALL = ["AERO", "PENDLE", "LIT", "SYRUP", "ETHFI", "ZRO", "ENA"];
+  const ALT_ALL = ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO", "NEAR", "TIA", "XLM"];
+  const DEFAULTS = {
+    L: 10000, band: 10, minTrade: 100, window: 90, ethShare: 40, levLong: 5, levShort: 5, levEth: 10, equity: 10000,
+    hypeQty: 0, hedgeHype: false, paperStart: new Date().toISOString().slice(0, 10),
+    weights: { AERO: 1, PENDLE: 1, LIT: 1, SYRUP: 1, ETHFI: 1, ZRO: 1, ENA: 1 },
+    alts: ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"],
+    pos: {}
+  };
+  const LS_KEY = "citrini-ls-book-v1";
+  const TS_KEY = "citrini-ls-link-ts";
+  const PERIOD_KEY = "citrini-ls-period";
+  const NUM_KEYS = ["L", "band", "minTrade", "window", "ethShare", "levLong", "levShort", "levEth", "equity", "hypeQty"];
+  const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+  const HOUR = 3600000, DAY = 24 * HOUR;
+  const $ = id => document.getElementById(id);
+  const clone = o => JSON.parse(JSON.stringify(o));
+
+  let state = clone(DEFAULTS);
+  let market = null, plan = null;
+  let hasLocal = false;
+
+  /* ---------- formatting ---------- */
+  const nf = (min, max) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: min, maximumFractionDigits: max });
+  const usd = v => nf(0, 0).format(Math.round(v)) + " $";
+  const kusd = v => Math.abs(v) >= 10000 ? nf(1, 1).format(v / 1000) + "k $" : usd(v);
+  const susd = v => { const r = Math.round(v); return (r > 0 ? "+" : r < 0 ? "−" : "±") + usd(Math.abs(r)); };
+  const pct = (v, d = 0) => nf(d, d).format(v * 100) + " %";
+  const qty = (v, dec) => nf(0, dec).format(v);
+  const price = v => new Intl.NumberFormat("de-DE", { maximumSignificantDigits: 5 }).format(v);
+  const two = v => nf(2, 2).format(v);
+  const dm = ms => new Date(ms).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
+  const dmy = ms => new Date(ms).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+  const parseNum = str => {
+    const s = String(str).trim().replace(/\s/g, "");
+    if (s === "" || s === "-") return 0;
+    const n = Number(s.includes(",") ? s.replace(/\./g, "").replace(",", ".") : s);
+    return Number.isFinite(n) ? n : NaN;
+  };
+
+  /* ---------- state persistence ---------- */
+  function sanitize(src) {
+    const out = clone(DEFAULTS);
+    if (!src || typeof src !== "object") return out;
+    for (const k of NUM_KEYS) if (Number.isFinite(Number(src[k]))) out[k] = Number(src[k]);
+    if (typeof src.hedgeHype === "boolean") out.hedgeHype = src.hedgeHype;
+    if (typeof src.paperStart === "string" && DATE_RE.test(src.paperStart) && Number.isFinite(Date.parse(src.paperStart))) out.paperStart = src.paperStart;
+    if (src.weights && typeof src.weights === "object") for (const t of LONG_ALL) if (Number.isFinite(Number(src.weights[t]))) out.weights[t] = Math.max(0, Number(src.weights[t]));
+    if (Array.isArray(src.alts)) out.alts = ALT_ALL.filter(t => src.alts.includes(t));
+    if (src.pos && typeof src.pos === "object") {
+      out.pos = {};
+      for (const [t, v] of Object.entries(src.pos)) if (/^[A-Z0-9]{1,12}$/.test(t) && Number.isFinite(Number(v))) out.pos[t] = Number(v);
+    }
+    return out;
+  }
+  const serial = () => {
+    const o = {};
+    for (const k of NUM_KEYS) o[k] = state[k];
+    o.hedgeHype = state.hedgeHype; o.paperStart = state.paperStart; o.weights = state.weights; o.alts = state.alts;
+    o.pos = Object.fromEntries(Object.entries(state.pos).filter(([, v]) => v !== 0));
+    return o;
+  };
+  function loadLocal() {
+    try { const raw = localStorage.getItem(LS_KEY); if (raw) { state = sanitize(JSON.parse(raw)); hasLocal = true; } } catch (e) { /* storage unavailable */ }
+  }
+  let saveTimer = null, lastSaved = "";
+  function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 800); }
+  function save() {
+    const json = JSON.stringify(serial());
+    if (json === lastSaved) return;
+    try {
+      localStorage.setItem(LS_KEY, json);
+      lastSaved = json;
+      hasLocal = true;
+      $("templateNote").hidden = true;
+      $("saveState").textContent = "In diesem Browser gespeichert.";
+    } catch (e) { $("saveState").textContent = "Dieser Browser speichert nichts. Die Werte gelten bis zum Neuladen."; }
+  }
+
+  /* A personal link carries the settings in the URL fragment, which never leaves the browser. Each link has a
+     timestamp, so reopening the same link (for example from the home screen) never overwrites later edits. */
+  const b64e = s => { let bin = ""; for (const b of new TextEncoder().encode(s)) bin += String.fromCharCode(b); return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const b64d = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0)));
+  function importFromLink() {
+    const m = location.hash.match(/[#&]s=([A-Za-z0-9_-]+)/);
+    if (!m) return;
+    let obj;
+    try { obj = JSON.parse(b64d(m[1])); } catch (e) { return; }
+    const ts = Number(obj && obj.ts) || 0;
+    let seen = 0;
+    try { seen = Number(localStorage.getItem(TS_KEY)) || 0; } catch (e) { /* ignore */ }
+    if (ts && ts <= seen) return;
+    state = sanitize(obj);
+    hasLocal = true;
+    try { localStorage.setItem(LS_KEY, JSON.stringify(serial())); localStorage.setItem(TS_KEY, String(ts || Date.now())); } catch (e) { /* ignore */ }
+    $("saveState").textContent = "Einstellungen aus deinem Link übernommen.";
+  }
+  $("shareBtn").addEventListener("click", () => {
+    const link = location.origin + location.pathname + "#s=" + b64e(JSON.stringify({ ...serial(), ts: Date.now() }));
+    const done = () => { $("shareBtn").textContent = "Link kopiert"; setTimeout(() => { $("shareBtn").textContent = "Link für ein anderes Gerät kopieren"; }, 1600); };
+    const fallback = () => { const ta = $("shareFallback"); ta.value = link; ta.hidden = false; ta.focus(); ta.select(); };
+    try { navigator.clipboard.writeText(link).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  /* ---------- settings form ---------- */
+  const FIELDS = [["sL", "L"], ["sBand", "band"], ["sMin", "minTrade"], ["sShare", "ethShare"], ["sLevL", "levLong"], ["sLevS", "levShort"], ["sLevE", "levEth"], ["sEq", "equity"], ["sHype", "hypeQty"]];
+  function buildSettings() {
+    const w = $("weights");
+    w.innerHTML = "";
+    for (const t of LONG_ALL) {
+      const lab = document.createElement("label");
+      lab.htmlFor = "w_" + t;
+      lab.innerHTML = `<span>${t}</span><input id="w_${t}" type="number" min="0" step="0.5" inputmode="decimal"><span class="pct" id="wp_${t}"></span>`;
+      w.appendChild(lab);
+    }
+    const a = $("alts");
+    a.innerHTML = "";
+    for (const t of ALT_ALL) {
+      const lab = document.createElement("label");
+      lab.htmlFor = "a_" + t;
+      lab.innerHTML = `<input id="a_${t}" type="checkbox"> ${t}`;
+      a.appendChild(lab);
+    }
+    for (const [id, key] of FIELDS) $(id).addEventListener("input", e => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && e.target.value !== "") { state[key] = v; changed(); }
+      if (id === "sShare") $("sShareOut").textContent = state.ethShare + " %";
+    });
+    $("sWin").addEventListener("change", e => { state.window = Number(e.target.value); changed(); });
+    $("sHedgeHype").addEventListener("change", e => { state.hedgeHype = e.target.checked; changed(); });
+    $("sStart").addEventListener("change", e => {
+      if (DATE_RE.test(e.target.value) && Number.isFinite(Date.parse(e.target.value))) { state.paperStart = e.target.value; changed(); }
+    });
+    for (const t of LONG_ALL) $("w_" + t).addEventListener("input", e => {
+      const v = Number(e.target.value);
+      if (Number.isFinite(v) && e.target.value !== "") { state.weights[t] = Math.max(0, v); changed(); }
+    });
+    for (const t of ALT_ALL) $("a_" + t).addEventListener("change", e => {
+      state.alts = ALT_ALL.filter(x => x === t ? e.target.checked : state.alts.includes(x));
+      changed();
+    });
+  }
+  function fillSettings() {
+    for (const [id, key] of FIELDS) if (document.activeElement !== $(id)) $(id).value = state[key];
+    $("sShareOut").textContent = state.ethShare + " %";
+    $("sWin").value = String(state.window);
+    $("sHedgeHype").checked = !!state.hedgeHype;
+    if (document.activeElement !== $("sStart")) $("sStart").value = state.paperStart;
+    for (const t of LONG_ALL) if (document.activeElement !== $("w_" + t)) $("w_" + t).value = state.weights[t];
+    for (const t of ALT_ALL) $("a_" + t).checked = state.alts.includes(t);
+  }
+  function fillWeightPcts() {
+    const sum = LONG_ALL.reduce((a, t) => a + (state.weights[t] > 0 ? state.weights[t] : 0), 0);
+    for (const t of LONG_ALL) $("wp_" + t).textContent = state.weights[t] > 0 && sum > 0 ? pct(state.weights[t] / sum, 1) : "nicht im Basket";
+  }
+
+  /* ---------- rendering ---------- */
+  function changed() { perfDirty = true; recompute(); scheduleSave(); }
+  function recompute() {
+    plan = market ? window.CLS.computePlan(market, state) : null;
+    render();
+  }
+  function setNotice(text) { const n = $("notice"); n.textContent = text || ""; n.hidden = !text; }
+
+  function render() {
+    fillWeightPcts();
+    renderStamp();
+    if (!market) return;
+    if (!plan || plan.error) { setNotice(plan ? plan.error : "Die Marktdaten sind unvollständig."); perfMessage("Für den Verlauf fehlen gültige Einstellungen oder Marktdaten."); return; }
+    setNotice("");
+    const p = plan;
+    const nLong = p.longs.length;
+    $("sub").textContent = `${nLong} Citrini-Token long · ETH und ${p.alts.length} Alts short`;
+    $("tLong").textContent = usd(p.longUsd);
+    $("tLongS").textContent = `${nLong} Token, Beta ${two(p.bBook)}`;
+    $("tShort").textContent = usd(p.shortUsd);
+    $("tShortS").textContent = `ETH ${kusd(p.ethUsd)} · Alts ${kusd(p.shortUsd - p.ethUsd)}`;
+    $("tVol").textContent = pct(p.resid);
+    $("tVolS").textContent = `p. a., ungehedged ${pct(p.unhedged)}`;
+    $("tDay").textContent = "± " + usd(p.resid * p.longUsd / Math.sqrt(365));
+    $("tDayS").textContent = "an einem normalen Tag";
+    const net = (p.fundRecv - p.fundPay) / 12;
+    $("tFund").textContent = (net >= 0 ? "+" : "−") + usd(Math.abs(net));
+    $("tFundS").textContent = `pro Monat, Ø 30 Tage`;
+    $("tMargin").textContent = usd(p.margin);
+    $("tMarginS").textContent = state.equity > 0 ? `${pct(p.margin / state.equity)} der USDC-Equity` : "gebunden";
+    renderTickets();
+    renderBook();
+    renderHedge();
+    schedulePerf();
+  }
+
+  function renderStamp() {
+    const st = $("stamp"), tx = $("stampText");
+    if (!market) return;
+    const live = lastMsg > 0 && Date.now() - lastMsg < 15000;
+    const time = new Date(lastMsg || Date.parse(market.asOf)).toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    st.classList.toggle("live", live);
+    st.classList.toggle("stale", !live && lastMsg > 0);
+    tx.textContent = live ? `Live · ${time}` : lastMsg ? `Keine Verbindung · letzte Kurse ${time}` : "Verbinde mit Hyperliquid …";
+    const lastClose = market.t0 + market.coins.ETH.closes.length * market.step;
+    $("srcNote").textContent = `Kurse live per WebSocket direkt von Hyperliquid. Verlauf und Funding bis ${new Date(lastClose).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}, nachgeladen von einer GitHub Action alle 8 Stunden.`;
+  }
+
+  function orderLine(l) {
+    const side = l.dq > 0 ? "KAUFEN" : "VERKAUFEN";
+    const lev = l.tq !== 0 ? `, Hebel ${l.lev}x` : "";
+    return `${side} ${qty(Math.abs(l.dq), l.dec)} ${l.t} (≈ ${usd(Math.abs(l.dusd))}) – ${l.action}${lev}`;
+  }
+  function renderTickets() {
+    const list = $("tickets");
+    const trades = plan.lines.filter(l => l.trade).sort((a, b) => Math.abs(b.dusd) - Math.abs(a.dusd));
+    $("bandHint").textContent = `Nur Positionen außerhalb von ± ${state.band} % um das Ziel und ab ${usd(state.minTrade)} Ordergröße.`;
+    list.innerHTML = "";
+    if (!trades.length) {
+      const li = document.createElement("li");
+      li.className = "empty";
+      li.textContent = "Alle Positionen liegen im Band. Heute ist nichts zu tun.";
+      list.appendChild(li);
+    }
+    for (const l of trades) {
+      const li = document.createElement("li");
+      const buy = l.dq > 0;
+      li.innerHTML = `<span class="chip ${buy ? "buy" : "sell"}">${buy ? "Kaufen" : "Verkaufen"}</span>
+        <span><span class="qty"></span> <span class="what"></span></span><span class="usd"></span>`;
+      li.querySelector(".qty").textContent = `${qty(Math.abs(l.dq), l.dec)} ${l.t}`;
+      li.querySelector(".what").textContent = l.tq !== 0 ? `${l.action} · Hebel ${l.lev}x · Margin ${usd(l.marginUsd)}` : l.action;
+      li.querySelector(".usd").textContent = "≈ " + usd(Math.abs(l.dusd));
+      list.appendChild(li);
+    }
+    $("copyBtn").disabled = !trades.length;
+    $("copyBtn").dataset.text = trades.length ? [`Citrini Long/Short – Orders ${new Date().toLocaleDateString("de-DE")}`, ...trades.map(orderLine)].join("\n") : "";
+  }
+
+  let bookKeys = "";
+  const rowEls = {};
+  function groupOf(l) { return l.tgtUsd > 0 ? 0 : l.tgtUsd < 0 ? 1 : 2; }
+  function sortedLines() {
+    const altOrder = t => (t === "ETH" ? -1 : ALT_ALL.indexOf(t));
+    return plan.lines.slice().sort((a, b) => groupOf(a) - groupOf(b) || (groupOf(a) === 1 ? altOrder(a.t) - altOrder(b.t) : b.tgtUsd - a.tgtUsd) || a.t.localeCompare(b.t));
+  }
+  function renderBook() {
+    const lines = sortedLines();
+    const keys = lines.map(l => l.t + ":" + groupOf(l)).join("|");
+    const body = $("bookBody");
+    if (keys !== bookKeys) {
+      bookKeys = keys;
+      body.innerHTML = "";
+      const names = ["Long", "Short", "Schließen"];
+      let g = -1;
+      for (const l of lines) {
+        if (groupOf(l) !== g) {
+          g = groupOf(l);
+          const tr = document.createElement("tr");
+          tr.className = "group";
+          tr.innerHTML = `<td colspan="10">${names[g]}</td>`;
+          body.appendChild(tr);
+        }
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td class="token"></td><td class="side"></td><td class="num price"></td><td class="num tusd"></td><td class="num tq"></td>
+          <td class="num lev"></td><td class="num mrg"></td>
+          <td class="num"><input class="qty-in" type="text" inputmode="decimal" autocomplete="off"></td><td class="drift"></td><td class="order"></td>`;
+        const input = tr.querySelector("input");
+        input.id = "q_" + l.t;
+        input.setAttribute("aria-label", `Aktuelle Stückzahl ${l.t}`);
+        input.addEventListener("input", () => {
+          const v = parseNum(input.value);
+          if (!Number.isFinite(v)) return;
+          if (v === 0) delete state.pos[l.t]; else state.pos[l.t] = v;
+          changed();
+        });
+        body.appendChild(tr);
+        rowEls[l.t] = { tr, token: tr.querySelector(".token"), side: tr.querySelector(".side"), price: tr.querySelector(".price"), tusd: tr.querySelector(".tusd"), tq: tr.querySelector(".tq"), lev: tr.querySelector(".lev"), mrg: tr.querySelector(".mrg"), input, drift: tr.querySelector(".drift"), order: tr.querySelector(".order") };
+      }
+    }
+    for (const l of lines) {
+      const r = rowEls[l.t];
+      if (!r) continue;
+      r.token.textContent = l.t;
+      r.side.innerHTML = l.tq > 0 ? '<span class="side-long">Long</span>' : l.tq < 0 ? '<span class="side-short">Short</span>' : '<span class="side-none">–</span>';
+      r.price.textContent = price(l.mark);
+      r.tusd.textContent = l.tgtUsd ? usd(Math.abs(l.tgtUsd)) : "–";
+      r.tq.textContent = l.tq ? qty(l.tq, l.dec) : "0";
+      r.lev.textContent = l.tq ? l.lev + "x" : "–";
+      r.mrg.textContent = l.tq ? usd(l.marginUsd) : "–";
+      if (document.activeElement !== r.input) r.input.value = l.cur ? qty(l.cur, Math.max(l.dec, 6)).replace(/\./g, "") : "";
+      if (l.tq === 0) r.drift.innerHTML = '<span class="chip warn">nicht im Ziel</span>';
+      else if (l.cur === 0) r.drift.innerHTML = '<span class="chip warn">fehlt</span>';
+      else {
+        const txt = (l.drift > 0 ? "+" : "") + pct(l.drift);
+        r.drift.innerHTML = l.trade ? `<span class="chip warn">${txt}</span>` : `<span class="chip ok">${txt} · im Band</span>`;
+      }
+      r.order.innerHTML = l.trade ? `<span class="chip ${l.dq > 0 ? "buy" : "sell"}">${l.dq > 0 ? "Kaufen" : "Verkaufen"} ${qty(Math.abs(l.dq), l.dec)}</span>` : '<span class="side-none">–</span>';
+    }
+  }
+
+  function renderHedge() {
+    const p = plan;
+    $("fBook").textContent = two(p.bBook);
+    $("fAlt").textContent = p.alts.length ? two(p.bAlt) : "–";
+    $("fShare").textContent = pct(p.share);
+    $("fExpo").textContent = `${kusd(p.longBetaUsd)} / ${kusd(p.shortBetaUsd)}`;
+    $("fHype").textContent = `${kusd(p.hypeVal)}, Beta ${two(p.hypeBeta)}, ${state.hedgeHype ? "abgesichert" : "nicht abgesichert"}`;
+    $("methodHint").textContent = `Gemessen über die letzten ${p.windowDays} Tage mit ${p.n} täglichen Renditen. ${pct(p.share)} des Long-Betas sichert ETH ab, den Rest der Alt-Korb (${p.alts.join(", ") || "leer"}).`;
+    const rb = $("riskBody");
+    rb.innerHTML = "";
+    const toks = [...p.longs.map(([t]) => t), "ETH", ...p.alts, "HYPE"];
+    for (const t of toks) {
+      const c = market.coins[t];
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td class="token"></td><td class="num"></td><td class="num"></td><td class="num"></td><td class="num"></td>`;
+      const td = tr.children;
+      td[0].textContent = t === "HYPE" ? "HYPE (spot)" : t;
+      td[1].textContent = two(p.betas[t]);
+      td[2].textContent = pct(c.fundNow, 1);
+      td[3].textContent = pct(c.fund30, 1);
+      td[4].textContent = c.maxLev + "x";
+      rb.appendChild(tr);
+    }
+  }
+
+  /* ---------- performance ---------- */
+  const PERIODS = [["paper", ""], ["30", "1M"], ["91", "3M"], ["182", "6M"], ["max", "Max"]];
+  let period = null;
+  try { period = localStorage.getItem(PERIOD_KEY); } catch (e) { period = null; }
+  const show = { ls: true, lo: true };
+  let sim = null, geo = null, hoverIdx = null, perfFrame = 0, perfDirty = true;
+  const paperMs = () => Date.parse(state.paperStart + "T00:00:00Z");
+
+  function buildPeriods() {
+    const box = $("periods");
+    for (const [id] of PERIODS) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.p = id;
+      b.setAttribute("aria-pressed", "false");
+      b.addEventListener("click", () => {
+        period = id;
+        try { localStorage.setItem(PERIOD_KEY, id); } catch (e) { /* ignore */ }
+        renderPerf();
+      });
+      box.appendChild(b);
+    }
+    for (const b of document.querySelectorAll(".legend button")) b.addEventListener("click", () => {
+      const k = b.dataset.s, other = k === "ls" ? "lo" : "ls";
+      if (show[k] && !show[other]) return; // keep at least one line
+      show[k] = !show[k];
+      b.setAttribute("aria-pressed", String(show[k]));
+      drawChart();
+    });
+  }
+  function perfMessage(text) {
+    $("perfMsg").textContent = text;
+    $("perfMsg").hidden = false;
+    $("perfMain").hidden = true;
+    sim = null;
+  }
+  function schedulePerf() { cancelAnimationFrame(perfFrame); perfFrame = requestAnimationFrame(() => (perfDirty || !sim ? renderPerf() : tailPerf())); }
+
+  function renderPerf() {
+    perfDirty = false;
+    if (!market || !plan || plan.error) return;
+    if (!(market.t0 > 0)) { perfMessage("Der Verlauf erscheint mit dem nächsten Daten-Update am Morgen."); return; }
+    const range = window.CLS.simRange(market, state);
+    if (!range) { perfMessage("Für diese Einstellungen reichen die Kursdaten nicht für eine Simulation."); return; }
+    const asOf = range.latest, ps = paperMs();
+    const startOf = id => id === "paper" ? ps : id === "max" ? range.earliest : asOf - Number(id) * DAY;
+    const usable = id => id === "paper" ? ps < asOf : id === "max" || startOf(id) >= range.earliest - DAY / 2;
+    let pid = period;
+    if (!PERIODS.some(([id]) => id === pid) || !usable(pid)) pid = usable("paper") && asOf - ps >= 7 * DAY ? "paper" : ["91", "30", "max"].find(usable);
+    for (const b of $("periods").children) {
+      const id = b.dataset.p;
+      b.textContent = id === "paper" ? "Seit " + dm(ps) : PERIODS.find(p => p[0] === id)[1];
+      b.disabled = !usable(id);
+      b.setAttribute("aria-pressed", String(id === pid));
+      b.title = !b.disabled ? "" : id === "paper" ? `Das Paper-Portfolio startet am ${dmy(ps)}` : "So weit reichen die Kursdaten für dieses Setup nicht zurück";
+    }
+    sim = window.CLS.simulate(market, state, startOf(pid));
+    if (!sim || sim.t.length < 2) { perfMessage("Für diesen Zeitraum gibt es noch keine Kurse. Der erste Wert kommt mit dem nächsten 8-Stunden-Schluss."); return; }
+    sim.pid = pid;
+    paintPerf();
+  }
+  /* A live tick only moves the last point: the book as of the last 8h close, re-marked at the live prices. */
+  function tailPerf() {
+    if (!market || !plan || plan.error || !sim) return;
+    const now = Date.parse(market.asOf);
+    if (!(now > sim.tClose)) return;
+    const r = sim.markTo(now, t => market.coins[t].mark);
+    const last = sim.t.length - 1;
+    if (sim.t[last] > sim.tClose) { sim.t[last] = now; sim.ls[last] = r.ls; sim.lo[last] = r.lo; }
+    else { sim.t.push(now); sim.ls.push(r.ls); sim.lo.push(r.lo); }
+    ({ book: sim.book, longOnly: sim.longOnly, hypePnl: sim.hypePnl } = r);
+    paintPerf();
+  }
+  function paintPerf() {
+    const pid = sim.pid;
+    $("perfMsg").hidden = true;
+    $("perfMain").hidden = false;
+
+    const last = sim.t.length - 1, v = sim.ls[last], vLo = sim.lo[last];
+    const base = state.equity > 0 ? state.equity : Number(state.L);
+    const t0 = sim.t[0], t1 = sim.t[last];
+    $("pfValue").textContent = susd(v);
+    $("pfPct").className = "chip " + (v >= 0 ? "up" : "down");
+    $("pfPct").textContent = (v >= 0 ? "▲ " : "▼ ") + pct(Math.abs(v) / base, 1);
+    const days = Math.max(1, Math.round((t1 - t0) / DAY));
+    $("pfSub").textContent = `${dmy(t0)} bis ${dmy(t1)} · ${days === 1 ? "1 Tag" : days + " Tage"} · in % von ${usd(base)} ${state.equity > 0 ? "Equity" : "Long-Book"}`
+      + (sim.clamped && pid === "paper" ? " · früher reichen die Kurse nicht" : "");
+    $("lgLs").textContent = susd(v);
+    $("lgLo").textContent = susd(vLo);
+
+    const st = perfStats(sim);
+    setTile("pLong", susd(st.longPx), `${sim.longs.length} Longs, nur Kurs`);
+    setTile("pShort", susd(st.shortPx), `ETH und ${sim.alts.length} Alts, nur Kurs`);
+    setTile("pFund", susd(st.fund), st.fund >= 0 ? "netto erhalten" : "netto gezahlt");
+    setTile("pFees", susd(-sim.book.fees), `${sim.book.trades} Trades, Umsatz ${kusd(sim.book.turnover)}`);
+    setTile("pDD", st.dd >= 0.5 ? susd(-st.dd) : "0 $", st.dd >= 0.5 ? `Hoch ${dm(st.ddPeak)}, Tief ${dm(st.ddLow)}` : "bisher kein Rückgang");
+    setTile("pVol", st.vol != null ? pct(st.vol) : "–", st.vol != null ? `aufs Long-Book · ohne Hedge ${pct(st.volLo)}` : "ab einer Woche Verlauf");
+    renderBars(st.by);
+    renderTable();
+    $("pfMethod").textContent = `Start ${dmy(t0)} mit allen Zielpositionen zum Schlusskurs, danach jeden Tag um 00:00 UTC neue Hedge-Quoten aus den letzten ${state.window} Tagen und Trades nur außerhalb von ± ${state.band} %. Funding aus der Hyperliquid-Historie, 0,045 % Gebühr je Trade, ohne Slippage. Vor dem Paper-Start ist das ein Rückblick: Token und Gewichte stammen von heute.`;
+    $("pfPlot").setAttribute("aria-label", `Verlauf ${dmy(t0)} bis ${dmy(t1)}: Long/Short-Buch ${susd(v)}, Long-Basket allein ${susd(vLo)}. Werte auch in der Tabelle unten.`);
+    drawChart();
+  }
+  function setTile(id, value, sub) { $(id).textContent = value; $(id + "S").textContent = sub; }
+
+  function perfStats(s) {
+    const b = s.book, longSet = new Set(s.longs);
+    let longPx = 0, shortPx = 0, fund = 0;
+    const by = [];
+    for (const t of new Set([...Object.keys(b.pnl), ...Object.keys(b.fund)])) {
+      const p = b.pnl[t] || 0, f = b.fund[t] || 0;
+      if (longSet.has(t)) longPx += p; else shortPx += p;
+      fund += f;
+      by.push({ t, side: longSet.has(t) ? "long" : "short", v: p + f });
+    }
+    if (s.hypePnl) by.push({ t: "HYPE", side: "spot", v: s.hypePnl });
+    let peak = 0, peakT = s.t[0], dd = 0, ddPeak = s.t[0], ddLow = s.t[0];
+    s.ls.forEach((v, i) => {
+      if (v > peak) { peak = v; peakT = s.t[i]; }
+      if (peak - v > dd) { dd = peak - v; ddPeak = peakT; ddLow = s.t[i]; }
+    });
+    const daily = [], dailyLo = [];
+    s.t.forEach((t, i) => { if (t % DAY === 0) { daily.push(s.ls[i]); dailyLo.push(s.lo[i]); } });
+    const diffs = a => a.slice(1).map((x, i) => x - a[i]);
+    const L = Number(state.L);
+    const ok = daily.length >= 8 && L > 0;
+    return {
+      longPx, shortPx, fund, by, dd, ddPeak, ddLow,
+      vol: ok ? window.CLS.std(diffs(daily)) * Math.sqrt(365) / L : null,
+      volLo: ok ? window.CLS.std(diffs(dailyLo)) * Math.sqrt(365) / L : null
+    };
+  }
+
+  function renderBars(by) {
+    const box = $("pfBars");
+    box.innerHTML = "";
+    const max = Math.max(1, ...by.map(x => Math.abs(x.v)));
+    for (const x of by.sort((a, b) => b.v - a.v)) {
+      const row = document.createElement("div");
+      row.className = "bar-row";
+      row.innerHTML = `<span class="tok"></span><span class="sd"></span><span class="bar-track"><span class="bar"></span></span><span class="val"></span>`;
+      row.querySelector(".tok").textContent = x.t;
+      row.querySelector(".sd").textContent = x.side === "long" ? "Long" : x.side === "short" ? "Short" : "Spot";
+      const bar = row.querySelector(".bar");
+      bar.classList.add(x.side, x.v >= 0 ? "pos" : "neg");
+      bar.style.width = (Math.abs(x.v) / max * 50).toFixed(2) + "%";
+      row.querySelector(".val").textContent = susd(x.v);
+      box.appendChild(row);
+    }
+  }
+
+  function renderTable() {
+    const tb = $("pfTable");
+    tb.innerHTML = "";
+    const last = sim.t.length - 1;
+    for (let i = last; i >= 0; i--) {
+      if (i !== last && i !== 0 && sim.t[i] % DAY !== 0) continue;
+      const tr = document.createElement("tr");
+      tr.innerHTML = `<td></td><td class="num"></td><td class="num"></td>`;
+      tr.children[0].textContent = i === last ? new Date(sim.t[i]).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "") : dmy(sim.t[i]);
+      tr.children[1].textContent = susd(sim.ls[i]);
+      tr.children[2].textContent = susd(sim.lo[i]);
+      tb.appendChild(tr);
+    }
+  }
+
+  /* ---------- chart ---------- */
+  /* Round ticks that waste the least height: try 3 to 6 intervals and keep the tightest fit. */
+  function niceTicks(min, max, most) {
+    if (max - min < 1) { min -= 50; max += 50; }
+    let best = null;
+    for (let count = 3; count <= most; count++) {
+      const raw = (max - min) / count, mag = Math.pow(10, Math.floor(Math.log10(raw))), r = raw / mag;
+      const step = (r <= 1 ? 1 : r <= 2 ? 2 : r <= 2.5 ? 2.5 : r <= 5 ? 5 : 10) * mag;
+      const lo = Math.floor(min / step) * step, hi = Math.ceil(max / step) * step;
+      if (!best || hi - lo < best.hi - best.lo) best = { lo, hi, step };
+    }
+    const ticks = [];
+    for (let v = best.lo; v <= best.hi + best.step / 2; v += best.step) ticks.push(Math.round(v / best.step) * best.step);
+    return { lo: best.lo, hi: best.hi, ticks };
+  }
+  const tickLabel = v => {
+    if (v === 0) return "0";
+    const s = Math.abs(v) >= 1000 ? nf(0, 1).format(Math.abs(v) / 1000) + "k" : nf(0, 0).format(Math.abs(v));
+    return (v > 0 ? "+" : "−") + s;
+  };
+  function timeTicks(a, z, width) {
+    const span = z - a, room = Math.max(2, Math.floor(width / 78));
+    const out = [];
+    if (span <= 2 * DAY) {
+      const st = [8 * HOUR, 16 * HOUR, DAY].find(x => span / x <= room) || DAY;
+      for (let t = Math.ceil(a / st) * st; t <= z; t += st) out.push(t);
+      return { ticks: out, fmt: t => new Date(t).toLocaleString("de-DE", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }).replace(",", "") };
+    }
+    const d = new Date(a);
+    d.setHours(0, 0, 0, 0);
+    if (span > 75 * DAY) {
+      const months = [1, 2, 3].find(x => span / (x * 30.4 * DAY) <= room) || 3;
+      d.setDate(1);
+      while (d.getTime() < a) d.setMonth(d.getMonth() + 1);
+      for (; d.getTime() <= z; d.setMonth(d.getMonth() + months)) out.push(d.getTime());
+      return { ticks: out, fmt: t => new Date(t).toLocaleDateString("de-DE", { month: "short", year: "2-digit" }) };
+    }
+    const days = [1, 2, 3, 7, 14].find(x => span / (x * DAY) <= room) || 14;
+    while (d.getTime() < a) d.setDate(d.getDate() + 1);
+    for (; d.getTime() <= z; d.setDate(d.getDate() + days)) out.push(d.getTime());
+    return { ticks: out, fmt: dm };
+  }
+
+  function drawChart() {
+    if (!sim) return;
+    const plot = $("pfPlot");
+    const W = Math.max(280, Math.floor(plot.clientWidth)), H = W < 560 ? 230 : 280;
+    const M = { l: 48, r: 14, t: 18, b: 28 };
+    const pw = W - M.l - M.r, ph = H - M.t - M.b;
+    const T = sim.t, a = T[0], z = T[T.length - 1];
+    let lo = 0, hi = 0;
+    for (const k of ["ls", "lo"]) if (show[k]) for (const v of sim[k]) { if (v < lo) lo = v; if (v > hi) hi = v; }
+    const yt = niceTicks(lo, hi, H < 260 ? 5 : 6);
+    const X = t => M.l + (z > a ? (t - a) / (z - a) : 0.5) * pw;
+    const Y = v => M.t + (yt.hi - v) / (yt.hi - yt.lo) * ph;
+    const f = n => n.toFixed(1);
+    let svg = `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" aria-hidden="true" focusable="false">`;
+    for (const v of yt.ticks) {
+      const y = f(Y(v));
+      if (v !== 0) svg += `<line class="grid" x1="${M.l}" x2="${W - M.r}" y1="${y}" y2="${y}"/>`;
+      svg += `<text x="${M.l - 8}" y="${y}" dy="0.32em" text-anchor="end">${tickLabel(v)}</text>`;
+    }
+    svg += `<text class="unit" x="${M.l - 8}" y="${M.t - 8}" text-anchor="end">$</text>`;
+    svg += `<line class="zero" x1="${M.l}" x2="${W - M.r}" y1="${f(Y(0))}" y2="${f(Y(0))}"/>`;
+    const xt = timeTicks(a, z, pw);
+    for (const t of xt.ticks) {
+      const x = X(t);
+      const anchor = x < M.l + 24 ? "start" : x > W - M.r - 24 ? "end" : "middle";
+      svg += `<text x="${f(x)}" y="${H - 8}" text-anchor="${anchor}">${xt.fmt(t)}</text>`;
+    }
+    const ps = paperMs();
+    if (sim.pid !== "paper" && ps > a && ps < z) {
+      const x = f(X(ps));
+      svg += `<line class="mark" x1="${x}" x2="${x}" y1="${M.t}" y2="${M.t + ph}"/><text class="mark-label" x="${x}" y="${M.t - 6}" text-anchor="${X(ps) > W - M.r - 40 ? "end" : "middle"}">Paper-Start</text>`;
+    }
+    const path = arr => arr.map((v, i) => (i ? "L" : "M") + f(X(T[i])) + " " + f(Y(v))).join("");
+    if (show.lo) svg += `<path class="line lo" d="${path(sim.lo)}"/>`;
+    if (show.ls) {
+      svg += `<path class="wash" d="${path(sim.ls)}L${f(X(z))} ${f(Y(0))}L${f(X(a))} ${f(Y(0))}Z"/>`;
+      svg += `<path class="line ls" d="${path(sim.ls)}"/>`;
+    }
+    for (const k of ["lo", "ls"]) if (show[k]) svg += `<circle class="dot ${k}" cx="${f(X(z))}" cy="${f(Y(sim[k][T.length - 1]))}" r="4"/>`;
+    svg += `<g class="hover" visibility="hidden"><line class="cross" x1="0" x2="0" y1="${M.t}" y2="${M.t + ph}"/><circle class="dot lo" r="4"/><circle class="dot ls" r="4"/></g></svg>`;
+    plot.innerHTML = svg;
+    geo = { X, Y, M, W, H, pw, a, z };
+    if (hoverIdx != null) showHover(Math.min(hoverIdx, T.length - 1));
+  }
+
+  function nearest(t) {
+    const T = sim.t;
+    let lo = 0, hi = T.length - 1;
+    while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (T[mid] < t) lo = mid; else hi = mid; }
+    return t - T[lo] <= T[hi] - t ? lo : hi;
+  }
+  function showHover(i) {
+    if (!sim || !geo) return;
+    hoverIdx = i;
+    const g = $("pfPlot").querySelector(".hover");
+    if (!g) return;
+    const x = geo.X(sim.t[i]);
+    g.setAttribute("visibility", "visible");
+    const cross = g.querySelector(".cross");
+    cross.setAttribute("x1", x); cross.setAttribute("x2", x);
+    for (const k of ["ls", "lo"]) {
+      const c = g.querySelector(".dot." + k);
+      c.setAttribute("visibility", show[k] ? "visible" : "hidden");
+      c.setAttribute("cx", x); c.setAttribute("cy", geo.Y(sim[k][i]));
+    }
+    const tip = $("pfTip");
+    tip.innerHTML = "";
+    const head = document.createElement("div");
+    head.className = "tip-date";
+    head.textContent = new Date(sim.t[i]).toLocaleString("de-DE", { weekday: "short", day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" });
+    tip.appendChild(head);
+    for (const [k, label] of [["ls", "Long/Short"], ["lo", "Nur Long"]]) {
+      if (!show[k]) continue;
+      const row = document.createElement("div");
+      row.className = "tip-row";
+      row.innerHTML = `<span class="key k-${k}"></span><b></b><span></span>`;
+      row.children[1].textContent = susd(sim[k][i]);
+      row.children[2].textContent = label;
+      tip.appendChild(row);
+    }
+    tip.hidden = false;
+    const tw = tip.offsetWidth, room = $("pfPlot").clientWidth;
+    const left = x + 14 + tw > room ? x - 14 - tw : x + 14;
+    tip.style.transform = `translate(${Math.max(0, left)}px, ${geo.M.t}px)`;
+  }
+  function hideHover() {
+    hoverIdx = null;
+    const g = $("pfPlot").querySelector(".hover");
+    if (g) g.setAttribute("visibility", "hidden");
+    $("pfTip").hidden = true;
+  }
+  function bindChart() {
+    const plot = $("pfPlot");
+    const fromEvent = e => {
+      if (!sim || !geo) return;
+      const r = plot.getBoundingClientRect();
+      const t = geo.a + (e.clientX - r.left - geo.M.l) / geo.pw * (geo.z - geo.a);
+      showHover(nearest(t));
+    };
+    plot.addEventListener("pointermove", fromEvent);
+    plot.addEventListener("pointerdown", fromEvent);
+    plot.addEventListener("pointerleave", e => { if (e.pointerType !== "touch") hideHover(); });
+    plot.addEventListener("focus", () => { if (sim) showHover(sim.t.length - 1); });
+    plot.addEventListener("blur", hideHover);
+    plot.addEventListener("keydown", e => {
+      if (!sim) return;
+      const last = sim.t.length - 1, i = hoverIdx ?? last;
+      const jump = e.shiftKey ? 3 : 1;
+      const next = { ArrowLeft: i - jump, ArrowRight: i + jump, Home: 0, End: last }[e.key];
+      if (next === undefined) { if (e.key === "Escape") hideHover(); return; }
+      e.preventDefault();
+      showHover(Math.max(0, Math.min(last, next)));
+    });
+    let width = 0;
+    new ResizeObserver(() => {
+      const w = Math.floor(plot.clientWidth);
+      if (w && w !== width) { width = w; drawChart(); }
+    }).observe(plot);
+  }
+
+  /* ---------- copy ---------- */
+  $("copyBtn").addEventListener("click", () => {
+    const text = $("copyBtn").dataset.text || "";
+    const done = () => { $("copyBtn").textContent = "Kopiert"; setTimeout(() => { $("copyBtn").textContent = "Orders kopieren"; }, 1600); };
+    const fallback = () => { const ta = $("copyFallback"); ta.value = text; ta.hidden = false; ta.focus(); ta.select(); };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+
+  /* ---------- live data ---------- */
+  const API = "https://api.hyperliquid.xyz/info", WS_URL = "wss://api.hyperliquid.xyz/ws";
+  let ws = null, wsWait = 1000, liveDirty = false, lastMsg = 0, historyAt = 0, polling = false, lastPoll = 0;
+  const info = async body => {
+    const r = await fetch(API, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return r.json();
+  };
+
+  /* One year of 8h closes and daily funding, rebuilt by the GitHub Action after every 8h close. */
+  async function loadHistory() {
+    const r = await fetch("data/market.json", { cache: "no-cache" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    const m = await r.json();
+    if (market) for (const [t, c] of Object.entries(market.coins)) if (c.live && m.coins[t]) { m.coins[t].mark = c.mark; m.coins[t].live = true; }
+    await extendHistory(m).catch(() => false);
+    market = m;
+    historyAt = Date.now();
+    perfDirty = true;
+  }
+  /* If the Action is late, fetch the 8h candles it has not added yet; funding for new days is estimated
+     from the current rate until the Action fills it in. */
+  async function extendHistory(m) {
+    const coins = Object.keys(m.coins), now = Date.now();
+    const N = m.coins.ETH.closes.length, from = m.t0 + N * m.step;
+    const missing = Math.floor((now - from) / m.step);
+    if (missing >= 1) {
+      const got = await Promise.all(coins.map(t => info({ type: "candleSnapshot", req: { coin: t, interval: "8h", startTime: from, endTime: now } })));
+      coins.forEach((t, j) => {
+        const by = new Map(got[j].filter(k => k.T < now).map(k => [k.t, Number(Number(k.c).toPrecision(5))]));
+        for (let i = 0; i < missing; i++) m.coins[t].closes.push(by.get(from + i * m.step) ?? null);
+      });
+    }
+    const days = Math.floor(now / DAY) - Math.floor(m.d0 / DAY) + 1;
+    for (const t of coins) {
+      const f = m.coins[t].fund || (m.coins[t].fund = []);
+      while (f.length < days) f.push(Math.round(m.coins[t].fundNow / 365 * 1e6) / 100);
+    }
+  }
+  async function refreshMeta() {
+    const [meta, ctxs] = await info({ type: "metaAndAssetCtxs" });
+    meta.universe.forEach((u, i) => {
+      const c = market && market.coins[u.name];
+      if (!c) return;
+      if (!c.live) c.mark = Number(ctxs[i].markPx);
+      c.fundNow = Number(ctxs[i].funding) * 24 * 365;
+      c.maxLev = u.maxLeverage;
+      c.szDec = u.szDecimals;
+    });
+    liveDirty = true;
+  }
+  function connect() {
+    if (document.visibilityState !== "visible" || (ws && ws.readyState <= 1)) return;
+    try { ws = new WebSocket(WS_URL); } catch (e) { setTimeout(connect, wsWait); return; }
+    ws.onopen = () => {
+      wsWait = 1000;
+      ws.send(JSON.stringify({ method: "subscribe", subscription: { type: "allMids" } }));
+    };
+    ws.onmessage = ev => {
+      let msg;
+      try { msg = JSON.parse(ev.data); } catch (e) { return; }
+      if (msg.channel === "allMids" && msg.data) applyMids(msg.data.mids);
+    };
+    ws.onclose = () => { ws = null; renderStamp(); setTimeout(connect, wsWait); wsWait = Math.min(30000, wsWait * 2); };
+    ws.onerror = () => { try { ws.close(); } catch (e) { /* ignore */ } };
+  }
+  function applyMids(mids) {
+    if (!mids || !market) return;
+    for (const [t, c] of Object.entries(market.coins)) {
+      const v = Number(mids[t]);
+      if (v > 0) { c.mark = v; c.live = true; }
+    }
+    lastMsg = Date.now();
+    liveDirty = true;
+  }
+  /* Networks that block WebSockets still get prices: a light REST call every two seconds instead. */
+  async function poll() {
+    if (polling) return;
+    polling = true;
+    lastPoll = Date.now();
+    try { applyMids(await info({ type: "allMids" })); } catch (e) { /* offline, try again shortly */ } finally { polling = false; }
+  }
+  /* Recompute at most once a second, and only while the page is visible. */
+  setInterval(() => {
+    if (!market || document.visibilityState !== "visible") return;
+    const streaming = ws && ws.readyState === 1 && Date.now() - lastMsg < 5000;
+    if (!streaming && Date.now() - lastPoll >= 2000) poll();
+    if (liveDirty) { liveDirty = false; market.asOf = new Date().toISOString(); recompute(); }
+    else renderStamp();
+  }, 1000);
+  setInterval(() => { if (ws && ws.readyState === 1) ws.send(JSON.stringify({ method: "ping" })); }, 50000);
+  setInterval(() => { if (market && document.visibilityState === "visible") refreshMeta().catch(() => {}); }, 60000);
+  setInterval(() => { if (document.visibilityState === "visible") loadHistory().then(recompute).catch(() => {}); }, 30 * 60000);
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !market) return;
+    connect();
+    refreshMeta().catch(() => {});
+    if (Date.now() - historyAt > 30 * 60000) loadHistory().then(recompute).catch(() => {});
+  });
+
+  /* ---------- boot ---------- */
+  buildSettings();
+  buildPeriods();
+  bindChart();
+  loadLocal();
+  importFromLink();
+  $("templateNote").hidden = hasLocal;
+  fillSettings();
+  render();
+
+  async function boot() {
+    try { await loadHistory(); }
+    catch (e) {
+      $("stampText").textContent = "Kein Verlauf";
+      setNotice("Die Verlaufsdaten fehlen noch. Sie kommen mit dem ersten Lauf der GitHub Action.");
+      return;
+    }
+    recompute();
+    connect();
+    refreshMeta().catch(() => setNotice("Hyperliquid antwortet gerade nicht. Angezeigt werden die zuletzt geladenen Kurse."));
+  }
+  boot();
+})();
+</script>
+</body>
+</html>
