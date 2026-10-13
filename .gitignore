@@ -3,3 +3,8 @@
 /site/
 /data/
 __pycache__/
+bot.toml
+/state/
+/logs/
+STOP
+.env
