@@ -3,7 +3,8 @@
 Dashboard für den beta-neutralen Long/Short-Basket auf Hyperliquid: Paper-Portfolio mit Verlauf, Orders mit Hebel, Positionen und Hedge.
 
 - `index.html` – die Seite. Kurse kommen live per WebSocket direkt von Hyperliquid, Verlauf und Funding aus `data/market.json`.
-- `refresh.py` – baut `data/market.json`: ein Jahr 8h-Kerzen und tägliches Funding (nur Python-Standardbibliothek).
+- `refresh.py` – baut `data/market.json`: ein Jahr 8h-Kerzen und tägliches Funding (nur Python-Standardbibliothek). Darin
+  steht auch die Rechnung, die Seite und Bot teilen: Hedge-Quoten, Zielbuch und die Regel, wann sich ein Trade lohnt.
 - `.github/workflows/pages.yml` – lädt die Daten alle 8 Stunden neu und veröffentlicht die Seite auf GitHub Pages.
 - `seed/market.json` – Startdaten, damit der erste Lauf nicht ein ganzes Jahr Funding nachladen muss.
 - `bot/` – Rebalancing-Bot, siehe unten.
@@ -22,6 +23,10 @@ python3 -m http.server
 `bot/` hält das Buch auf Ziel, aber nicht nach Uhrzeit: Er prüft jede Minute, ob der Abbau des Abweichungsrisikos die
 erwarteten Handelskosten übersteigt, und handelt nur dann. Ausgeführt wird zuerst als Maker (Post-Only, nachgezogen),
 was nach 90 Sekunden offen ist, als IOC mit Preisgrenze. Füllt sich eine Seite deutlich früher, zieht er die andere sofort nach.
+
+Die Seite rechnet mit derselben Regel: „Heute handeln“ zeigt, was der Bot bei den eingetragenen Positionen jetzt täte, und die
+Wertentwicklung simuliert das Buch so, wie er es führen würde (Long-Book als Vielfaches des Kontowerts, Prüfung nach jedem
+8h-Schluss).
 
 Probemodus: Paper-Konto mit 10.000 $, echte Kurse von Hyperliquid, keine echten Orders (Python 3.11+, keine Pakete nötig).
 

@@ -24,7 +24,7 @@ import tomllib  # noqa: E402
 
 from .broker import FatalError, LiveBroker, PaperBroker, execute
 from .hl import MAINNET, TESTNET, Info
-from .model import betas, cost_rates, decide, targets, universe
+from .model import betas, cost_rates, decide, strategy_coins, targets, universe
 
 DEFAULTS = {
     "mode": "paper",
@@ -139,7 +139,7 @@ def main():
         broker.cancel_all(universe(cfg))
         log.say(f"{mode.upper()}: Konto {address[:6]}…{address[-4:]}, Orders über die API-Wallet, "
                 "alte offene Orders der Strategie storniert")
-    coins = sorted(universe(cfg) | {"HYPE"})
+    coins = sorted(strategy_coins(cfg) | {"HYPE"})
     snap, snap_time, warned = None, 0.0, set()
     while True:
         try:

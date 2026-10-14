@@ -57,7 +57,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 [hidden] { display: none !important; }
 body { background: var(--bg); color: var(--ink); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
-.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 16px; padding-block: 22px 44px; display: grid; gap: 18px; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); padding-block: 22px 44px; display: grid; gap: 18px; }
 
 /* header */
 .top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px 24px; }
@@ -158,6 +158,9 @@ details.more .hint { margin-top: 6px; }
 .tickets .what { color: var(--ink-2); font-size: 13px; }
 .tickets .qty { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; }
 .tickets .usd { font-family: var(--font-num); font-variant-numeric: tabular-nums; color: var(--ink-2); text-align: right; }
+.decision { margin: 0; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; color: var(--ink-2); font-size: 13.5px; }
+.decision .chip { align-self: center; }
+.decision b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 600; color: var(--ink); }
 .copy-fallback { width: 100%; min-height: 120px; font-family: var(--font-num); font-size: 12px; color: var(--ink); background: var(--bg); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
 
 /* chips */
@@ -251,7 +254,7 @@ body { margin: 0; }
     <div class="card-head">
       <div>
         <h2 id="hPerf">Wertentwicklung</h2>
-        <p class="hint">Das Buch mit deinen Einstellungen, simuliert statt gehandelt: täglich angepasst wie unter „Heute handeln“, mit Funding und Gebühren.</p>
+        <p class="hint">Das Buch mit deinen Einstellungen, simuliert statt gehandelt: nach jedem 8-Stunden-Schluss geprüft und nur angepasst, wenn es sich lohnt – nach derselben Regel wie der Bot, mit Funding und Handelskosten.</p>
       </div>
       <div class="seg" id="periods" role="group" aria-label="Zeitraum"></div>
     </div>
@@ -273,13 +276,13 @@ body { margin: 0; }
         <div class="tile"><span class="k">Long-Seite</span><span class="v" id="pLong">–</span><span class="s" id="pLongS">&nbsp;</span></div>
         <div class="tile"><span class="k">Short-Seite</span><span class="v" id="pShort">–</span><span class="s" id="pShortS">&nbsp;</span></div>
         <div class="tile"><span class="k">Funding</span><span class="v" id="pFund">–</span><span class="s" id="pFundS">&nbsp;</span></div>
-        <div class="tile"><span class="k">Gebühren</span><span class="v" id="pFees">–</span><span class="s" id="pFeesS">&nbsp;</span></div>
+        <div class="tile"><span class="k">Handelskosten</span><span class="v" id="pFees">–</span><span class="s" id="pFeesS">&nbsp;</span></div>
         <div class="tile"><span class="k">Größter Rückgang</span><span class="v" id="pDD">–</span><span class="s" id="pDDS">&nbsp;</span></div>
         <div class="tile"><span class="k">Schwankung p. a.</span><span class="v" id="pVol">–</span><span class="s" id="pVolS">&nbsp;</span></div>
       </div>
       <details class="more">
         <summary>Beitrag je Token</summary>
-        <p class="hint">Kursgewinn plus Funding je Position im gewählten Zeitraum, ohne Gebühren. Grün sind Longs, rot Shorts; nach rechts heißt Gewinn.</p>
+        <p class="hint">Kursgewinn plus Funding je Position im gewählten Zeitraum, ohne Handelskosten. Grün sind Longs, rot Shorts; nach rechts heißt Gewinn.</p>
         <div class="bars" id="pfBars"></div>
       </details>
       <details class="more">
@@ -299,11 +302,12 @@ body { margin: 0; }
     <div class="card-head">
       <div>
         <h2 id="hTickets">Heute handeln</h2>
-        <p class="hint" id="bandHint">Nur Positionen, die außerhalb des Bands liegen.</p>
+        <p class="hint" id="ruleHint">Gehandelt wird nur, was mehr Risiko abbaut, als es kostet. Dieselbe Regel wie im Bot.</p>
         <p class="hint">Den Hebel stellst du pro Position ein. Öffne alles im Cross-Margin bzw. Portfolio Margin, nicht Isolated, sonst kann eine Seite einzeln liquidiert werden.</p>
       </div>
       <button type="button" class="btn" id="copyBtn" disabled>Orders kopieren</button>
     </div>
+    <p class="decision" id="decision" hidden><span class="chip" id="decisionChip"></span><span id="decisionText"></span></p>
     <ul class="tickets" id="tickets"><li class="empty">Sobald die Marktdaten da sind, stehen hier die Orders für heute.</li></ul>
     <textarea id="copyFallback" class="copy-fallback" readonly hidden aria-label="Orders zum Kopieren"></textarea>
   </section>
@@ -346,21 +350,22 @@ body { margin: 0; }
     <section class="card" aria-labelledby="hSettings">
       <h2 id="hSettings">Einstellungen</h2>
       <form id="settings" class="settings" novalidate>
-        <label for="sL">Long-Book (USD)<input id="sL" type="number" inputmode="decimal" min="0" step="500"></label>
-        <label for="sBand">Band (± %)<input id="sBand" type="number" inputmode="decimal" min="0" max="100" step="1"></label>
-        <label for="sMin">Mindestorder (USD)<input id="sMin" type="number" inputmode="decimal" min="0" step="10"></label>
+        <label for="sEq">Kontowert (USDC)<input id="sEq" type="number" inputmode="decimal" min="0" step="100"></label>
+        <label for="sBook">Long-Book (× Kontowert)<input id="sBook" type="number" inputmode="decimal" min="0" step="0.1"></label>
+        <label for="sRisk">Risikoaversion<input id="sRisk" type="number" inputmode="decimal" min="0" step="0.5"></label>
+        <label for="sMin">Mindestorder (USD)<input id="sMin" type="number" inputmode="decimal" min="0" step="5"></label>
         <label for="sWin">Beta-Fenster<select id="sWin"><option value="60">60 Tage</option><option value="90">90 Tage</option><option value="120">120 Tage</option></select></label>
         <label for="sShare" class="wide">ETH-Anteil am Hedge: <output id="sShareOut" for="sShare">40 %</output><input id="sShare" type="range" min="0" max="100" step="5"></label>
         <label for="sLevL">Hebel Longs<input id="sLevL" type="number" min="1" max="40" step="1"></label>
         <label for="sLevS">Hebel Alt-Shorts<input id="sLevS" type="number" min="1" max="40" step="1"></label>
         <label for="sLevE">Hebel ETH<input id="sLevE" type="number" min="1" max="40" step="1"></label>
-        <label for="sEq">USDC-Equity<input id="sEq" type="number" inputmode="decimal" min="0" step="100"></label>
         <label for="sHype">HYPE spot (Stück)<input id="sHype" type="number" inputmode="decimal" min="0" step="1"></label>
         <label for="sStart">Paper-Start<input id="sStart" type="date"></label>
         <label for="sHedgeHype" class="check wide"><input id="sHedgeHype" type="checkbox"> HYPE-Spot mit ETH-Short absichern</label>
         <fieldset class="wide"><legend>Long-Gewichte in % (0 = nicht im Basket)</legend><div class="weights" id="weights"></div></fieldset>
         <fieldset class="wide"><legend>Alt-Korb, gleich gewichtet</legend><div class="alts" id="alts"></div></fieldset>
       </form>
+      <p class="hint">Wie im Bot: Das Long-Book ist der Faktor mal Kontowert, die Short-Seite wird beta-neutral dazu bemessen. Höhere Risikoaversion heißt eine engere Zone ohne Trades, also öfter und in kleineren Schritten handeln.</p>
       <div class="share">
         <button type="button" class="btn ghost" id="shareBtn">Link für ein anderes Gerät kopieren</button>
         <p class="hint">Der Link enthält deine Einstellungen und Positionen. Schick ihn nur an dich selbst.</p>
@@ -373,16 +378,21 @@ body { margin: 0; }
   <footer>
     <p id="srcNote">Kurse live per WebSocket direkt von Hyperliquid. Verlauf und Funding-Historie lädt eine GitHub Action alle 8 Stunden.</p>
     <p>Gewichte: deine Vorgabe vom 13.10.2026. Der erste Vorschlag mischte Risk Parity mit Holder-Rendite (Rückkäufe und Ausschüttungen relativ zur Market Cap, DefiLlama).</p>
-    <p>Methode: Tägliche Renditen, alle 8 Stunden gemessen. Der Short ist so groß, dass sein Beta zu ETH das Beta des Long-Baskets ausgleicht. Ein fester Anteil davon liegt in ETH, der Rest gleich verteilt im Alt-Korb. Orders erscheinen nur, wenn eine Position um mehr als das Band vom Ziel abweicht. Rechenhilfe, keine Anlageberatung.</p>
+    <p>Methode: Tägliche Renditen, alle 8 Stunden gemessen. Der Short ist so groß, dass sein Beta zu ETH das Beta des Long-Baskets ausgleicht. Ein fester Anteil davon liegt in ETH, der Rest gleich verteilt im Alt-Korb. Orders erscheinen nur, wenn sie mehr Risiko abbauen, als sie kosten; das Risiko misst die Kovarianz der Renditen im Beta-Fenster. Rechenhilfe, keine Anlageberatung.</p>
   </footer>
 </div>
 
 <script>
-/* Pure maths, shared with the daily refresh script (same formulas, same order of operations). */
+/* Pure maths, shared with refresh.py and through it with the rebalancing bot: same formulas, same order of
+   operations. */
 window.CLS = (() => {
   const SQ365 = Math.sqrt(365);
   const HOUR = 3600000, DAY = 24 * HOUR;
-  const FEE = 0.00045; // Hyperliquid taker fee, base tier
+  /* Expected cost per USD traded with the bot's maker-first execution: the maker fee, and for the share that
+     ends up as taker after the maker window the taker fee plus half the spread instead (Hyperliquid base tier;
+     half spreads of these markets were 0.1 to 2 bp in October 2026). */
+  const MAKER_FEE = 0.00015, TAKER_FEE = 0.00045, TAKER_SHARE = 0.3, HALF_SPREAD = 0.0001;
+  const COST = MAKER_FEE + TAKER_SHARE * (TAKER_FEE - MAKER_FEE + HALF_SPREAD);
   const total = v => { let a = 0; for (const x of v) a += x; return a; };
   const mean = v => total(v) / v.length;
   const demean = v => { const m = mean(v); return v.map(a => a - m); };
@@ -413,20 +423,30 @@ window.CLS = (() => {
     return { C, per, N, longs, wsum: total(longs.map(([, w]) => w)), alts, need, lc, ret, ex, valid, ethShare: Number(s.ethShare) };
   }
 
-  /* Hedge ratios from the overlapping daily log returns at the 8h steps end-n .. end-1. */
+  /* Hedge ratios from the overlapping daily log returns at the 8h steps end-n .. end-1. Plain loops: the
+     simulation calls this after every 8h close. */
   function hedgeAt(cx, end, n) {
     const { per, ret, ex, valid, longs, wsum, alts } = cx;
     const idx = [];
     for (let i = Math.max(per, end - n); i < end; i++) if (valid[i]) idx.push(i);
     if (!longs.length || idx.length < 30) return null;
-    const wl = longs.map(([t, w]) => [ex[t], w / wsum]);
-    const y = idx.map(i => { let acc = 0; for (const [e, w] of wl) acc += w * e[i]; return Math.log1p(acc); });
-    const x = idx.map(i => ret.ETH[i]);
-    const a = alts.length ? idx.map(i => { let acc = 0; for (const t of alts) acc += ret[t][i]; return acc / alts.length; }) : null;
+    const m = idx.length, nl = longs.length, na = alts.length;
+    const le = longs.map(([t]) => ex[t]), lw = longs.map(([, w]) => w / wsum), ar = alts.map(t => ret[t]);
+    const eth = ret.ETH, hype = ret.HYPE;
+    const y = new Array(m), x = new Array(m), hy = new Array(m), a = na ? new Array(m) : null;
+    for (let k = 0; k < m; k++) {
+      const i = idx[k];
+      let acc = 0;
+      for (let j = 0; j < nl; j++) acc += lw[j] * le[j][i];
+      y[k] = Math.log1p(acc);
+      x[k] = eth[i];
+      hy[k] = hype[i];
+      if (na) { let s = 0; for (let j = 0; j < na; j++) s += ar[j][i]; a[k] = s / na; }
+    }
     const bBook = beta(y, x);
     const bAlt = a ? beta(a, x) : 0;
     const share = (a && bAlt > 0.2) ? Math.min(1, Math.max(0, cx.ethShare / 100)) : 1;
-    return { idx, y, x, a, bBook, bAlt, share, hEth: share * bBook, hAlt: share < 1 ? (1 - share) * bBook / bAlt : 0, hypeBeta: beta(idx.map(i => ret.HYPE[i]), x) };
+    return { idx, y, x, a, bBook, bAlt, share, hEth: share * bBook, hAlt: share < 1 ? (1 - share) * bBook / bAlt : 0, hypeBeta: beta(hy, x) };
   }
 
   function targetsFor(cx, h, s, hypePx) {
@@ -439,6 +459,116 @@ window.CLS = (() => {
     return tg;
   }
 
+  /* The long book in USD: bookPerSide times the account value, as the bot sizes it. */
+  const bookUsd = (s, equity = s.equity) => Math.max(0, Number(s.bookPerSide) * Number(equity));
+  /* The coins the strategy manages: its longs and alt basket, ETH, and every candidate in the market data (all of
+     them but HYPE), so a coin dropped from the basket is closed instead of being left behind unhedged. Positions in
+     any other coin are left alone. */
+  const universe = (s, C) => new Set([...Object.keys(s.weights), ...s.alts, "ETH", ...Object.keys(C).filter(t => t !== "HYPE")]);
+
+  /* ---------- the rebalancing decision: refresh.decide, the rule the bot trades by ----------
+     A deviation d (USD per coin) from the target book adds d'Sd of daily PnL variance, S being the covariance of
+     the daily returns in the hedge window. Trades t minimise  gamma/2 (d+t)'S(d+t) + sum c_i |t_i|  with
+     gamma = risk aversion / account value. The absolute-value term gives every position a zone in which trading
+     does not pay; outside it a trade stops at the edge of the zone. */
+
+  /* The return window behind one hedge estimate. Each coin's demeaned column and each pair's covariance are
+     computed once and shared by every decision at that step. */
+  function returnWindow(cx, h) {
+    const idx = h.idx, n = idx.length, K = cx.need.length;
+    const at = cx.at || (cx.at = new Map(cx.need.map((t, i) => [t, i])));
+    const devs = new Array(K), pairs = new Float64Array(K * K).fill(NaN);
+    const dev = i => {
+      if (devs[i]) return devs[i];
+      const r = cx.ret[cx.need[i]], d = new Float64Array(n);
+      let m = 0;
+      for (let k = 0; k < n; k++) m += r[idx[k]];
+      m /= n;
+      for (let k = 0; k < n; k++) d[k] = r[idx[k]] - m;
+      return (devs[i] = d);
+    };
+    return {
+      has: t => at.has(t),
+      cov(p, q) {
+        let i = at.get(p), j = at.get(q);
+        if (i > j) [i, j] = [j, i];
+        let v = pairs[i * K + j];
+        if (Number.isNaN(v)) {
+          const a = dev(i), b = dev(j);
+          let acc = 0;
+          for (let k = 0; k < n; k++) acc += a[k] * b[k];
+          pairs[i * K + j] = v = acc / (n - 1);
+        }
+        return v;
+      }
+    };
+  }
+
+  const quad = (v, cov) => { let a = 0; for (let i = 0; i < v.length; i++) for (let j = 0; j < v.length; j++) a += v[i] * cov[i][j] * v[j]; return a; };
+
+  /* Coordinate descent on  gamma/2 (d+t)'S(d+t) + sum c_i |t_i|  (convex, so it converges). A coin with infinite
+     cost is never moved. */
+  function optimalTrades(delta, cov, cost, gamma, sweeps = 1000, tol = 1e-7) {
+    const k = delta.length, t = new Array(k).fill(0);
+    if (!(gamma > 0)) return t;
+    const g = [];  // S (d + t)
+    for (let i = 0; i < k; i++) { let a = 0; for (let j = 0; j < k; j++) a += cov[i][j] * delta[j]; g.push(a); }
+    for (let sweep = 0; sweep < sweeps; sweep++) {
+      let moved = 0;
+      for (let i = 0; i < k; i++) {
+        if (cov[i][i] <= 0) continue;
+        const b = gamma * (g[i] - cov[i][i] * t[i]);
+        const x = -(Math.sign(b) * Math.max(Math.abs(b) - cost[i], 0)) / (gamma * cov[i][i]);
+        const d = x - t[i];
+        if (d) {
+          for (let j = 0; j < k; j++) g[j] += cov[j][i] * d;
+          t[i] = x;
+          moved = Math.max(moved, Math.abs(d));
+        }
+      }
+      if (moved < tol) break;
+    }
+    return t;
+  }
+
+  /* Rebalancing trades in USD per coin (positive = buy) and the numbers behind the decision. current holds only
+     coins the strategy manages; cost is the expected cost per USD traded by coin, COST where missing. */
+  function decide(current, target, win, cost, equity, riskAversion, minOrder) {
+    const names = [...new Set([...Object.keys(target), ...Object.keys(current)])].filter(c => win.has(c)).sort();
+    const inNames = new Set(names);
+    /* Opening a position or dropping one is a strategy decision, not a drift: it happens in full, and the
+       optimiser leaves those coins where the decision puts them. It only weighs the drift of positions that
+       exist and stay. */
+    const forced = {};
+    for (const [c, v] of Object.entries(current)) if (!inNames.has(c) || Math.abs(target[c] || 0) < 1e-9) forced[c] = -v;
+    const least = Math.max(Number(minOrder), 1e-9);  // a position below one minimum order counts as not open
+    for (const c of names) if (Math.abs(current[c] || 0) < least && Math.abs(target[c] || 0) >= least) forced[c] = target[c] - (current[c] || 0);
+    const isForced = new Set(Object.keys(forced));
+    const rate = c => cost[c] ?? COST;
+    const cov = names.map(p => names.map(q => win.cov(p, q)));
+    const gamma = Math.max(Number(riskAversion), 0) / Math.max(Number(equity), 1);
+    const before = names.map(c => (current[c] || 0) - (target[c] || 0));
+    const delta = names.map((c, i) => before[i] + (forced[c] || 0));
+    const t = optimalTrades(delta, cov, names.map(c => (isForced.has(c) ? Infinity : rate(c))), gamma);
+    let trades = { ...forced };
+    names.forEach((c, i) => { if (t[i]) trades[c] = (trades[c] || 0) + t[i]; });
+    trades = Object.fromEntries(Object.entries(trades).filter(([, v]) => Math.abs(v) >= minOrder));
+    const after = names.map((c, i) => before[i] + (trades[c] || 0));
+    const riskDrift = quad(delta, cov), riskAfter = quad(after, cov);
+    return {
+      trades,
+      why: {
+        riskBefore: Math.sqrt(Math.max(quad(before, cov), 0)),  // daily 1 sigma of the deviation, USD
+        riskAfter: Math.sqrt(Math.max(riskAfter, 0)),
+        benefit: gamma / 2 * (riskDrift - riskAfter),           // risk cost the drift trades save, USD
+        cost: total(Object.entries(trades).map(([c, v]) => Math.abs(v) * rate(c))),
+        opening: [...isForced].filter(c => Object.hasOwn(trades, c) && target[c]).sort(),
+        closing: [...isForced].filter(c => Object.hasOwn(trades, c) && !target[c]).sort()
+      }
+    };
+  }
+
+  /* Today's book: hedge, targets and the trades that pay for themselves given the positions in s.pos. */
   function computePlan(m, s) {
     const C = m.coins;
     if (!C || !C.ETH || !C.HYPE) return null;
@@ -447,35 +577,45 @@ window.CLS = (() => {
     const n = Math.min(Math.round(s.window) * per, N - per);
     const h = hedgeAt(cx, N, n);
     if (!h) return { error: cx.longs.length ? "Zu wenig Kursdaten für das gewählte Fenster." : "Kein Token im Long-Basket." };
+    const L = bookUsd(s), equity = Number(s.equity);
+    if (!(L > 0)) return { error: "Trag einen Kontowert und die Größe des Long-Books ein, dann rechnet die Seite das Buch." };
     const { idx, y, x, a, bBook, bAlt, share, hEth, hAlt } = h;
     const yd = demean(y), xd = demean(x), ad = a ? demean(a) : y.map(() => 0);
     const resid = yd.map((v, k) => v - hEth * xd[k] - hAlt * ad[k]);
-    const L = Number(s.L);
     const betas = {};
     for (const t of cx.need) betas[t] = beta(idx.map(i => cx.ret[t][i]), x);
     const hypeVal = Number(s.hypeQty) * C.HYPE.mark;
-    const targets = targetsFor(cx, h, s, C.HYPE.mark);
+    const targets = targetsFor(cx, h, { ...s, L }, C.HYPE.mark);
     const ethN = targets.ETH ? -targets.ETH : 0;
 
     const pos = s.pos || {};
+    const mine = universe(s, C);
+    const current = {};
+    for (const [t, v] of Object.entries(pos)) {
+      const q = Number(v);
+      if (q && mine.has(t) && C[t] && C[t].mark > 0) current[t] = q * C[t].mark;
+    }
+    const { trades, why } = decide(current, targets, returnWindow(cx, h), {}, equity, s.riskAversion, Number(s.minTrade));
     const keys = new Set([...Object.keys(targets), ...Object.keys(pos).filter(k => Number(pos[k]) !== 0)]);
     const lines = [];
     for (const t of keys) {
       const c = C[t];
       if (!c || !(c.mark > 0)) continue;
       const dec = c.szDec;
-      const tq = roundTo((targets[t] || 0) / c.mark, dec);
+      const tgtUsd = targets[t] || 0;
+      const tq = roundTo(tgtUsd / c.mark, dec);
       const cur = Number(pos[t]) || 0;
-      const dq = roundTo(tq - cur, dec);
+      const dq = trades[t] ? roundTo(trades[t] / c.mark, dec) : 0;
       const dusd = dq * c.mark;
-      const drift = tq !== 0 ? (cur - tq) / Math.abs(tq) : null;
-      const trade = dq !== 0 && ((tq === 0 && cur !== 0) || (drift !== null && Math.abs(drift) >= s.band / 100 && Math.abs(dusd) >= s.minTrade));
+      /* deviation in size along the target: +30 % is 30 % too big, -25 % on a short means 25 % too small */
+      const drift = tq !== 0 ? (cur - tq) / tq : null;
+      const driftAfter = tq !== 0 ? (cur + dq - tq) / tq : null;
       let action = "";
-      if (tq === 0) action = "Position schließen";
-      else if (tq > 0) action = cur <= 0 ? "Long öffnen" : (dq > 0 ? "Long aufstocken" : "Long reduzieren");
+      if (!tgtUsd) action = "Position schließen";
+      else if (tgtUsd > 0) action = cur <= 0 ? "Long öffnen" : (dq > 0 ? "Long aufstocken" : "Long reduzieren");
       else action = cur >= 0 ? "Short öffnen" : (dq < 0 ? "Short aufstocken" : "Short reduzieren");
-      const lev = Math.min(c.maxLev, t === "ETH" ? s.levEth : (tq > 0 ? s.levLong : s.levShort));
-      lines.push({ t, mark: c.mark, dec, tgtUsd: targets[t] || 0, tq, cur, dq, dusd, drift, trade, action, lev, marginUsd: Math.abs(targets[t] || 0) / Math.max(1, lev), fundNow: c.fundNow, fund30: c.fund30, maxLev: c.maxLev });
+      const lev = Math.min(c.maxLev, t === "ETH" ? s.levEth : (tgtUsd > 0 ? s.levLong : s.levShort));
+      lines.push({ t, mark: c.mark, dec, tgtUsd, tq, cur, dq, dusd, drift, driftAfter, trade: dq !== 0, managed: mine.has(t), action, lev, marginUsd: Math.abs(tgtUsd) / Math.max(1, lev), fundNow: c.fundNow, fund30: c.fund30, maxLev: c.maxLev });
     }
     const longUsd = lines.filter(l => l.tgtUsd > 0).reduce((acc, l) => acc + l.tgtUsd, 0);
     const shortUsd = lines.filter(l => l.tgtUsd < 0).reduce((acc, l) => acc - l.tgtUsd, 0);
@@ -485,7 +625,7 @@ window.CLS = (() => {
     const shortBetaUsd = lines.filter(l => l.tgtUsd < 0).reduce((acc, l) => acc - l.tgtUsd * (l.t === "ETH" ? 1 : (betas[l.t] ?? 1)), 0);
     return {
       bBook, bAlt, share, hEth, hAlt, n: idx.length, windowDays: Math.round(n / per), longs: cx.longs, wsum: cx.wsum, alts: cx.alts, betas,
-      unhedged: std(y) * SQ365, resid: std(resid) * SQ365, L, hypeVal, hypeBeta: h.hypeBeta,
+      unhedged: std(y) * SQ365, resid: std(resid) * SQ365, L, equity, hypeVal, hypeBeta: h.hypeBeta, why,
       lines, longUsd, shortUsd, ethUsd: ethN, margin, fundPay, fundRecv, longBetaUsd: bBook * L, shortBetaUsd
     };
   }
@@ -511,9 +651,11 @@ window.CLS = (() => {
     return k < N ? { earliest: m.t0 + (k + 1) * m.step, latest: Date.parse(m.asOf) } : null;
   }
 
-  /* Paper portfolio: open all targets at the first 8h close on or after startMs, rebalance daily at 00:00 UTC
-     with the band rules above, pay funding and taker fees. Value path in USD for the long/short book and,
-     for comparison, the long basket alone. */
+  /* Paper portfolio run the way the bot runs it: open every target at the first 8h close on or after startMs;
+     after each later close re-estimate the hedge and trade only what decide() says pays for itself. The long book
+     is bookPerSide times the account value at that close. Pays funding from the history and the expected cost
+     per USD traded. Value path in USD for the long/short book and, for comparison, the long basket alone (same
+     rule, its own account). */
   function simulate(m, s, startMs) {
     const C = m.coins;
     if (!C || !C.ETH || !C.HYPE || !(m.t0 > 0)) return null;
@@ -533,27 +675,12 @@ window.CLS = (() => {
       px[t] = C[t].closes.map(v => (last = v > 0 ? v : last));
       fund[t] = C[t].fund || [];
     }
-    const band = Number(s.band) / 100, minTrade = Number(s.minTrade);
+    const equity0 = Number(s.equity), minOrder = Number(s.minTrade);
     const hype = s.hedgeHype ? Number(s.hypeQty) : 0;
     const portfolio = () => ({ q: {}, pnl: {}, fund: {}, fees: 0, trades: 0, turnover: 0 });
     const ls = portfolio(), lo = portfolio();
     let hypePnl = 0;
 
-    const rebalance = (pf, tg, k) => {
-      for (const t of [...new Set([...Object.keys(tg), ...Object.keys(pf.q)])].sort()) {
-        const p = px[t][k];
-        const tq = (tg[t] || 0) / p;
-        const cur = pf.q[t] || 0;
-        const dusd = (tq - cur) * p;
-        const drift = tq ? (cur - tq) / Math.abs(tq) : null;
-        if ((tq === 0 && cur !== 0) || (drift !== null && Math.abs(drift) >= band && Math.abs(dusd) >= minTrade)) {
-          if (tq) pf.q[t] = tq; else delete pf.q[t];
-          pf.fees += Math.abs(dusd) * FEE;
-          pf.turnover += Math.abs(dusd);
-          pf.trades += 1;
-        }
-      }
-    };
     /* Carry pf from the close of step k for `hours`, ending at the prices pNew(t). */
     const accrue = (pf, k, pNew, hours) => {
       const di = Math.floor((t0 + (k + 1) * step - d0) / DAY);
@@ -565,6 +692,21 @@ window.CLS = (() => {
       }
     };
     const value = (pf, extra = 0) => total(Object.values(pf.pnl)) + total(Object.values(pf.fund)) - pf.fees + extra;
+    const rebalance = (pf, h, win, k, longsOnly) => {
+      const equity = equity0 + value(pf);   // the account the bot would see, HYPE spot not included
+      let tg = targetsFor(cx, h, { ...s, L: bookUsd(s, equity) }, px.HYPE[k]);
+      if (longsOnly) tg = Object.fromEntries(Object.entries(tg).filter(([, v]) => v > 0));
+      const current = {};
+      for (const [t, q] of Object.entries(pf.q)) current[t] = q * px[t][k];
+      const { trades } = decide(current, tg, win, {}, equity, s.riskAversion, minOrder);
+      for (const [t, usd] of Object.entries(trades)) {
+        if (Math.abs(tg[t] || 0) < 1e-9) delete pf.q[t];  // dropped from the book: closed in full
+        else pf.q[t] = (pf.q[t] || 0) + usd / px[t][k];
+        pf.fees += Math.abs(usd) * COST;
+        pf.turnover += Math.abs(usd);
+        pf.trades += 1;
+      }
+    };
 
     const T = [], vLs = [], vLo = [];
     for (let k = k0; k < N; k++) {
@@ -572,13 +714,11 @@ window.CLS = (() => {
         for (const pf of [ls, lo]) accrue(pf, k - 1, t => px[t][k], step / HOUR);
         hypePnl += hype * (px.HYPE[k] - px.HYPE[k - 1]);
       }
-      if (k === k0 || (t0 + (k + 1) * step) % DAY === 0) {
-        const h = hedgeAt(cx, k + 1, n);
-        if (h) {
-          const tg = targetsFor(cx, h, s, px.HYPE[k]);
-          rebalance(ls, tg, k);
-          rebalance(lo, Object.fromEntries(Object.entries(tg).filter(([, v]) => v > 0)), k);
-        }
+      const h = hedgeAt(cx, k + 1, n);
+      if (h) {
+        const win = returnWindow(cx, h);
+        rebalance(ls, h, win, k, false);
+        rebalance(lo, h, win, k, true);
       }
       T.push(t0 + (k + 1) * step);
       vLs.push(value(ls, hypePnl));
@@ -612,7 +752,7 @@ window.CLS = (() => {
       longs: cx.longs.map(([t]) => t), alts: cx.alts };
   }
 
-  return { computePlan, simulate, simRange, std };
+  return { computePlan, simulate, simRange, std, bookUsd, COST };
 })();
 </script>
 
@@ -622,7 +762,7 @@ window.CLS = (() => {
   const LONG_ALL = ["AERO", "PENDLE", "LIT", "SYRUP", "ETHFI", "ZRO", "ENA"];
   const ALT_ALL = ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO", "NEAR", "TIA", "XLM"];
   const DEFAULTS = {
-    L: 10000, band: 10, minTrade: 100, window: 90, ethShare: 40, levLong: 5, levShort: 5, levEth: 10, equity: 10000,
+    equity: 10000, bookPerSide: 1.5, riskAversion: 3, minTrade: 25, window: 90, ethShare: 40, levLong: 5, levShort: 5, levEth: 10,
     hypeQty: 0, hedgeHype: false, paperStart: new Date().toISOString().slice(0, 10),
     weights: { AERO: 1, PENDLE: 1, LIT: 1, SYRUP: 1, ETHFI: 1, ZRO: 1, ENA: 1 },
     alts: ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"],
@@ -631,7 +771,7 @@ window.CLS = (() => {
   const LS_KEY = "citrini-ls-book-v1";
   const TS_KEY = "citrini-ls-link-ts";
   const PERIOD_KEY = "citrini-ls-period";
-  const NUM_KEYS = ["L", "band", "minTrade", "window", "ethShare", "levLong", "levShort", "levEth", "equity", "hypeQty"];
+  const NUM_KEYS = ["equity", "bookPerSide", "riskAversion", "minTrade", "window", "ethShare", "levLong", "levShort", "levEth", "hypeQty"];
   const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
   const HOUR = 3600000, DAY = 24 * HOUR;
   const $ = id => document.getElementById(id);
@@ -643,13 +783,15 @@ window.CLS = (() => {
 
   /* ---------- formatting ---------- */
   const nf = (min, max) => new Intl.NumberFormat("de-DE", { minimumFractionDigits: min, maximumFractionDigits: max });
-  const usd = v => nf(0, 0).format(Math.round(v)) + " $";
-  const kusd = v => Math.abs(v) >= 10000 ? nf(1, 1).format(v / 1000) + "k $" : usd(v);
+  const usd = v => nf(0, 0).format(Math.round(v)) + "\u00a0$";
+  const kusd = v => Math.abs(v) >= 10000 ? nf(1, 1).format(v / 1000) + "k\u00a0$" : usd(v);
   const susd = v => { const r = Math.round(v); return (r > 0 ? "+" : r < 0 ? "−" : "±") + usd(Math.abs(r)); };
-  const pct = (v, d = 0) => nf(d, d).format(v * 100) + " %";
+  const pct = (v, d = 0) => nf(d, d).format(v * 100) + "\u00a0%";
+  const spct = v => { const r = Math.round(v * 100); return (r > 0 ? "+" : r < 0 ? "−" : "") + nf(0, 0).format(Math.abs(r)) + "\u00a0%"; };
   const qty = (v, dec) => nf(0, dec).format(v);
   const price = v => new Intl.NumberFormat("de-DE", { maximumSignificantDigits: 5 }).format(v);
   const two = v => nf(2, 2).format(v);
+  const cents = v => nf(2, 2).format(v) + "\u00a0$";
   const dm = ms => new Date(ms).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit" });
   const dmy = ms => new Date(ms).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
   const parseNum = str => {
@@ -663,7 +805,9 @@ window.CLS = (() => {
   function sanitize(src) {
     const out = clone(DEFAULTS);
     if (!src || typeof src !== "object") return out;
-    for (const k of NUM_KEYS) if (Number.isFinite(Number(src[k]))) out[k] = Number(src[k]);
+    for (const k of NUM_KEYS) if (src[k] !== null && src[k] !== "" && Number.isFinite(Number(src[k]))) out[k] = Number(src[k]);
+    /* settings saved before the book was sized by the account value carry the long book in USD: keep that size */
+    if (!Number.isFinite(Number(src.bookPerSide ?? NaN)) && Number(src.L) > 0 && Number(src.equity) > 0) out.bookPerSide = Math.round(Number(src.L) / Number(src.equity) * 100) / 100;
     if (typeof src.hedgeHype === "boolean") out.hedgeHype = src.hedgeHype;
     if (typeof src.paperStart === "string" && DATE_RE.test(src.paperStart) && Number.isFinite(Date.parse(src.paperStart))) out.paperStart = src.paperStart;
     if (src.weights && typeof src.weights === "object") for (const t of LONG_ALL) if (Number.isFinite(Number(src.weights[t]))) out.weights[t] = Math.max(0, Number(src.weights[t]));
@@ -724,7 +868,7 @@ window.CLS = (() => {
   });
 
   /* ---------- settings form ---------- */
-  const FIELDS = [["sL", "L"], ["sBand", "band"], ["sMin", "minTrade"], ["sShare", "ethShare"], ["sLevL", "levLong"], ["sLevS", "levShort"], ["sLevE", "levEth"], ["sEq", "equity"], ["sHype", "hypeQty"]];
+  const FIELDS = [["sEq", "equity"], ["sBook", "bookPerSide"], ["sRisk", "riskAversion"], ["sMin", "minTrade"], ["sShare", "ethShare"], ["sLevL", "levLong"], ["sLevS", "levShort"], ["sLevE", "levEth"], ["sHype", "hypeQty"]];
   function buildSettings() {
     const w = $("weights");
     w.innerHTML = "";
@@ -776,7 +920,7 @@ window.CLS = (() => {
   }
 
   /* ---------- rendering ---------- */
-  function changed() { perfDirty = true; recompute(); scheduleSave(); }
+  function changed() { recompute(); scheduleSave(); }
   function recompute() {
     plan = market ? window.CLS.computePlan(market, state) : null;
     render();
@@ -793,7 +937,7 @@ window.CLS = (() => {
     const nLong = p.longs.length;
     $("sub").textContent = `${nLong} Citrini-Token long · ETH und ${p.alts.length} Alts short`;
     $("tLong").textContent = usd(p.longUsd);
-    $("tLongS").textContent = `${nLong} Token, Beta ${two(p.bBook)}`;
+    $("tLongS").textContent = `${nLong} Token, ${nf(0, 2).format(state.bookPerSide)} × Kontowert`;
     $("tShort").textContent = usd(p.shortUsd);
     $("tShortS").textContent = `ETH ${kusd(p.ethUsd)} · Alts ${kusd(p.shortUsd - p.ethUsd)}`;
     $("tVol").textContent = pct(p.resid);
@@ -804,7 +948,7 @@ window.CLS = (() => {
     $("tFund").textContent = (net >= 0 ? "+" : "−") + usd(Math.abs(net));
     $("tFundS").textContent = `pro Monat, Ø 30 Tage`;
     $("tMargin").textContent = usd(p.margin);
-    $("tMarginS").textContent = state.equity > 0 ? `${pct(p.margin / state.equity)} der USDC-Equity` : "gebunden";
+    $("tMarginS").textContent = `${pct(p.margin / p.equity)} des Kontowerts` + (p.margin > 0.8 * p.equity ? ", über 80 %: der Bot kürzt" : "");
     renderTickets();
     renderBook();
     renderHedge();
@@ -831,12 +975,13 @@ window.CLS = (() => {
   function renderTickets() {
     const list = $("tickets");
     const trades = plan.lines.filter(l => l.trade).sort((a, b) => Math.abs(b.dusd) - Math.abs(a.dusd));
-    $("bandHint").textContent = `Nur Positionen außerhalb von ± ${state.band} % um das Ziel und ab ${usd(state.minTrade)} Ordergröße.`;
+    $("ruleHint").textContent = `Gehandelt wird nur, was mehr Risiko abbaut, als es kostet (Risikoaversion ${nf(0, 2).format(state.riskAversion)}, Orders ab ${usd(state.minTrade)}). Dieselbe Regel wie im Bot.`;
+    renderDecision(trades);
     list.innerHTML = "";
     if (!trades.length) {
       const li = document.createElement("li");
       li.className = "empty";
-      li.textContent = "Alle Positionen liegen im Band. Heute ist nichts zu tun.";
+      li.textContent = "Keine Orders.";
       list.appendChild(li);
     }
     for (const l of trades) {
@@ -853,9 +998,33 @@ window.CLS = (() => {
     $("copyBtn").dataset.text = trades.length ? [`Citrini Long/Short – Orders ${new Date().toLocaleDateString("de-DE")}`, ...trades.map(orderLine)].join("\n") : "";
   }
 
+  /* Why the bot would or would not trade now, worded like its log. */
+  function renderDecision(trades) {
+    const w = plan.why, chip = $("decisionChip"), text = $("decisionText");
+    $("decision").hidden = false;
+    const b = v => `<b>${v}</b>`;
+    if (!trades.length) {
+      chip.className = "chip ok";
+      chip.textContent = "Kein Trade";
+      text.innerHTML = w.riskBefore < 0.5 ? "Alles im Ziel."
+        : `Abweichung vom Ziel 1σ ≈ ${b(usd(w.riskBefore))} pro Tag. Zurückhandeln würde mehr kosten, als es an Risiko spart.`;
+    } else if (w.opening.length || w.closing.length) {
+      const parts = [];
+      if (w.opening.length) parts.push(`${w.opening.length} ${w.opening.length === 1 ? "Position" : "Positionen"} eröffnen`);
+      if (w.closing.length) parts.push(`${w.closing.length} schließen`);
+      chip.className = "chip warn";
+      chip.textContent = "Handeln";
+      text.innerHTML = `${parts.join(", ")} · Kosten ≈ ${b(cents(w.cost))}`;
+    } else {
+      chip.className = "chip warn";
+      chip.textContent = "Lohnt sich";
+      text.innerHTML = `Abweichung 1σ ${b(usd(w.riskBefore))} → ${b(usd(w.riskAfter))} pro Tag · Nutzen ${b(cents(w.benefit))} > Kosten ${b(cents(w.cost))}`;
+    }
+  }
+
   let bookKeys = "";
   const rowEls = {};
-  function groupOf(l) { return l.tgtUsd > 0 ? 0 : l.tgtUsd < 0 ? 1 : 2; }
+  function groupOf(l) { return !l.managed ? 3 : l.tgtUsd > 0 ? 0 : l.tgtUsd < 0 ? 1 : 2; }
   function sortedLines() {
     const altOrder = t => (t === "ETH" ? -1 : ALT_ALL.indexOf(t));
     return plan.lines.slice().sort((a, b) => groupOf(a) - groupOf(b) || (groupOf(a) === 1 ? altOrder(a.t) - altOrder(b.t) : b.tgtUsd - a.tgtUsd) || a.t.localeCompare(b.t));
@@ -867,7 +1036,7 @@ window.CLS = (() => {
     if (keys !== bookKeys) {
       bookKeys = keys;
       body.innerHTML = "";
-      const names = ["Long", "Short", "Schließen"];
+      const names = ["Long", "Short", "Schließen", "Andere Positionen"];
       let g = -1;
       for (const l of lines) {
         if (groupOf(l) !== g) {
@@ -905,11 +1074,13 @@ window.CLS = (() => {
       r.lev.textContent = l.tq ? l.lev + "x" : "–";
       r.mrg.textContent = l.tq ? usd(l.marginUsd) : "–";
       if (document.activeElement !== r.input) r.input.value = l.cur ? qty(l.cur, Math.max(l.dec, 6)).replace(/\./g, "") : "";
-      if (l.tq === 0) r.drift.innerHTML = '<span class="chip warn">nicht im Ziel</span>';
+      if (!l.managed) r.drift.innerHTML = '<span class="chip ok">bleibt unberührt</span>';
+      else if (!l.tgtUsd) r.drift.innerHTML = '<span class="chip warn">nicht im Ziel</span>';
       else if (l.cur === 0) r.drift.innerHTML = '<span class="chip warn">fehlt</span>';
       else {
-        const txt = (l.drift > 0 ? "+" : "") + pct(l.drift);
-        r.drift.innerHTML = l.trade ? `<span class="chip warn">${txt}</span>` : `<span class="chip ok">${txt} · im Band</span>`;
+        /* a trade shows where it takes the position: back towards the target, or off it on purpose when that
+           offsets the deviations elsewhere more cheaply */
+        r.drift.innerHTML = l.trade ? `<span class="chip warn">${spct(l.drift)} → ${spct(l.driftAfter)}</span>` : `<span class="chip ok">${spct(l.drift)}</span>`;
       }
       r.order.innerHTML = l.trade ? `<span class="chip ${l.dq > 0 ? "buy" : "sell"}">${l.dq > 0 ? "Kaufen" : "Verkaufen"} ${qty(Math.abs(l.dq), l.dec)}</span>` : '<span class="side-none">–</span>';
     }
@@ -945,7 +1116,7 @@ window.CLS = (() => {
   let period = null;
   try { period = localStorage.getItem(PERIOD_KEY); } catch (e) { period = null; }
   const show = { ls: true, lo: true };
-  let sim = null, geo = null, hoverIdx = null, perfFrame = 0, perfDirty = true;
+  let sim = null, geo = null, hoverIdx = null, perfFrame = 0, perfTimer = 0;
   const paperMs = () => Date.parse(state.paperStart + "T00:00:00Z");
 
   function buildPeriods() {
@@ -976,10 +1147,27 @@ window.CLS = (() => {
     $("perfMain").hidden = true;
     sim = null;
   }
-  function schedulePerf() { cancelAnimationFrame(perfFrame); perfFrame = requestAnimationFrame(() => (perfDirty || !sim ? renderPerf() : tailPerf())); }
+  /* Re-running the simulation is the expensive part: it waits for a short pause in typing, and runs only when
+     something it depends on has changed (the settings but not the positions, the market data, the period). */
+  function schedulePerf() {
+    clearTimeout(perfTimer);
+    perfTimer = setTimeout(() => { cancelAnimationFrame(perfFrame); perfFrame = requestAnimationFrame(renderPerf); }, 120);
+  }
+  const marketKey = () => historyAt;
+  const simKey = pid => JSON.stringify([pid, marketKey(), NUM_KEYS.map(k => state[k]), state.hedgeHype, state.paperStart, state.weights, state.alts]);
+  /* A live tick only moves the last point: the book as of the last 8h close, re-marked at the live prices. */
+  function tailPerf() {
+    const now = Date.parse(market.asOf);
+    if (!(now > sim.tClose)) return;
+    const r = sim.markTo(now, t => market.coins[t].mark);
+    const last = sim.t.length - 1;
+    if (sim.t[last] > sim.tClose) { sim.t[last] = now; sim.ls[last] = r.ls; sim.lo[last] = r.lo; }
+    else { sim.t.push(now); sim.ls.push(r.ls); sim.lo.push(r.lo); }
+    ({ book: sim.book, longOnly: sim.longOnly, hypePnl: sim.hypePnl } = r);
+    paintPerf();
+  }
 
   function renderPerf() {
-    perfDirty = false;
     if (!market || !plan || plan.error) return;
     if (!(market.t0 > 0)) { perfMessage("Der Verlauf erscheint mit dem nächsten Daten-Update am Morgen."); return; }
     const range = window.CLS.simRange(market, state);
@@ -996,21 +1184,12 @@ window.CLS = (() => {
       b.setAttribute("aria-pressed", String(id === pid));
       b.title = !b.disabled ? "" : id === "paper" ? `Das Paper-Portfolio startet am ${dmy(ps)}` : "So weit reichen die Kursdaten für dieses Setup nicht zurück";
     }
+    const key = simKey(pid);
+    if (sim && sim.key === key) { tailPerf(); return; }
     sim = window.CLS.simulate(market, state, startOf(pid));
     if (!sim || sim.t.length < 2) { perfMessage("Für diesen Zeitraum gibt es noch keine Kurse. Der erste Wert kommt mit dem nächsten 8-Stunden-Schluss."); return; }
+    sim.key = key;
     sim.pid = pid;
-    paintPerf();
-  }
-  /* A live tick only moves the last point: the book as of the last 8h close, re-marked at the live prices. */
-  function tailPerf() {
-    if (!market || !plan || plan.error || !sim) return;
-    const now = Date.parse(market.asOf);
-    if (!(now > sim.tClose)) return;
-    const r = sim.markTo(now, t => market.coins[t].mark);
-    const last = sim.t.length - 1;
-    if (sim.t[last] > sim.tClose) { sim.t[last] = now; sim.ls[last] = r.ls; sim.lo[last] = r.lo; }
-    else { sim.t.push(now); sim.ls.push(r.ls); sim.lo.push(r.lo); }
-    ({ book: sim.book, longOnly: sim.longOnly, hypePnl: sim.hypePnl } = r);
     paintPerf();
   }
   function paintPerf() {
@@ -1019,13 +1198,13 @@ window.CLS = (() => {
     $("perfMain").hidden = false;
 
     const last = sim.t.length - 1, v = sim.ls[last], vLo = sim.lo[last];
-    const base = state.equity > 0 ? state.equity : Number(state.L);
+    const base = Number(state.equity);
     const t0 = sim.t[0], t1 = sim.t[last];
     $("pfValue").textContent = susd(v);
     $("pfPct").className = "chip " + (v >= 0 ? "up" : "down");
     $("pfPct").textContent = (v >= 0 ? "▲ " : "▼ ") + pct(Math.abs(v) / base, 1);
     const days = Math.max(1, Math.round((t1 - t0) / DAY));
-    $("pfSub").textContent = `${dmy(t0)} bis ${dmy(t1)} · ${days === 1 ? "1 Tag" : days + " Tage"} · in % von ${usd(base)} ${state.equity > 0 ? "Equity" : "Long-Book"}`
+    $("pfSub").textContent = `${dmy(t0)} bis ${dmy(t1)} · ${days === 1 ? "1 Tag" : days + " Tage"} · in % von ${usd(base)} Startkapital`
       + (sim.clamped && pid === "paper" ? " · früher reichen die Kurse nicht" : "");
     $("lgLs").textContent = susd(v);
     $("lgLo").textContent = susd(vLo);
@@ -1036,10 +1215,10 @@ window.CLS = (() => {
     setTile("pFund", susd(st.fund), st.fund >= 0 ? "netto erhalten" : "netto gezahlt");
     setTile("pFees", susd(-sim.book.fees), `${sim.book.trades} Trades, Umsatz ${kusd(sim.book.turnover)}`);
     setTile("pDD", st.dd >= 0.5 ? susd(-st.dd) : "0 $", st.dd >= 0.5 ? `Hoch ${dm(st.ddPeak)}, Tief ${dm(st.ddLow)}` : "bisher kein Rückgang");
-    setTile("pVol", st.vol != null ? pct(st.vol) : "–", st.vol != null ? `aufs Long-Book · ohne Hedge ${pct(st.volLo)}` : "ab einer Woche Verlauf");
+    setTile("pVol", st.vol != null ? pct(st.vol) : "–", st.vol != null ? `aufs Konto · ohne Hedge ${pct(st.volLo)}` : "ab einer Woche Verlauf");
     renderBars(st.by);
     renderTable();
-    $("pfMethod").textContent = `Start ${dmy(t0)} mit allen Zielpositionen zum Schlusskurs, danach jeden Tag um 00:00 UTC neue Hedge-Quoten aus den letzten ${state.window} Tagen und Trades nur außerhalb von ± ${state.band} %. Funding aus der Hyperliquid-Historie, 0,045 % Gebühr je Trade, ohne Slippage. Vor dem Paper-Start ist das ein Rückblick: Token und Gewichte stammen von heute.`;
+    $("pfMethod").textContent = `Start ${dmy(t0)} mit ${usd(base)} und allen Zielpositionen zum Schlusskurs; das Long-Book ist wie beim Bot ${nf(0, 2).format(state.bookPerSide)} × der jeweilige Kontowert. Nach jedem 8-Stunden-Schluss neue Hedge-Quoten aus den letzten ${state.window} Tagen, gehandelt wird nur, was mehr Risiko abbaut, als es kostet. Kosten ≈ ${pct(window.CLS.COST, 3)} je gehandeltem Dollar: Maker 0,015 %, für 30 % der Menge als Taker 0,045 % plus halber Spread. Funding aus der Hyperliquid-Historie. Vor dem Paper-Start ist das ein Rückblick: Token und Gewichte stammen von heute.`;
     $("pfPlot").setAttribute("aria-label", `Verlauf ${dmy(t0)} bis ${dmy(t1)}: Long/Short-Buch ${susd(v)}, Long-Basket allein ${susd(vLo)}. Werte auch in der Tabelle unten.`);
     drawChart();
   }
@@ -1063,13 +1242,14 @@ window.CLS = (() => {
     });
     const daily = [], dailyLo = [];
     s.t.forEach((t, i) => { if (t % DAY === 0) { daily.push(s.ls[i]); dailyLo.push(s.lo[i]); } });
-    const diffs = a => a.slice(1).map((x, i) => x - a[i]);
-    const L = Number(state.L);
-    const ok = daily.length >= 8 && L > 0;
+    /* daily returns on the account: the day's change over the account value the day before */
+    const eq0 = Number(state.equity);
+    const rets = a => a.slice(1).map((x, i) => (x - a[i]) / (eq0 + a[i]));
+    const ok = daily.length >= 8 && eq0 > 0 && [...daily, ...dailyLo].every(v => eq0 + v > 0);
     return {
       longPx, shortPx, fund, by, dd, ddPeak, ddLow,
-      vol: ok ? window.CLS.std(diffs(daily)) * Math.sqrt(365) / L : null,
-      volLo: ok ? window.CLS.std(diffs(dailyLo)) * Math.sqrt(365) / L : null
+      vol: ok ? window.CLS.std(rets(daily)) * Math.sqrt(365) : null,
+      volLo: ok ? window.CLS.std(rets(dailyLo)) * Math.sqrt(365) : null
     };
   }
 
@@ -1295,7 +1475,6 @@ window.CLS = (() => {
     await extendHistory(m).catch(() => false);
     market = m;
     historyAt = Date.now();
-    perfDirty = true;
   }
   /* If the Action is late, fetch the 8h candles it has not added yet; funding for new days is estimated
      from the current rate until the Action fills it in. */

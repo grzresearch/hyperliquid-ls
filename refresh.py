@@ -8,11 +8,15 @@ Usage: python3 refresh.py OUT.json [BOOK.json] [--prev PREV.json] [--funding-day
   --funding-days  days of funding fetched fresh (default: 30, or back to --prev if that is older;
                   without --prev the whole year is rebuilt, which takes about 12 minutes)
   --offline       recompute from an existing snapshot without calling Hyperliquid (tests)
-Stdlib only. Prints a German summary: hedge, orders outside the band with leverage, paper portfolio.
+Stdlib only. Prints a German summary: hedge, the trades that pay for themselves (with leverage), paper portfolio.
+
+The maths below is the single source for three places: the dashboard runs the same formulas in JavaScript,
+and the rebalancing bot imports them from here.
 """
 import argparse
 import json
 import math
+import operator
 import ssl
 import sys
 import time
@@ -24,8 +28,8 @@ LONGS = ["AERO", "PENDLE", "LIT", "SYRUP", "ETHFI", "ZRO", "ENA"]
 ALTS = ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO", "NEAR", "TIA", "XLM"]
 COINS = LONGS + ALTS + ["ETH", "HYPE"]
 DEFAULTS = {   # a neutral template; real settings come from BOOK.json
-    "L": 10000, "band": 10, "minTrade": 100, "window": 90,
-    "levLong": 5, "levShort": 5, "levEth": 10, "equity": 10000,
+    "equity": 10000, "bookPerSide": 1.5, "riskAversion": 3, "minTrade": 25, "window": 90,
+    "levLong": 5, "levShort": 5, "levEth": 10,
     "hypeQty": 0, "hedgeHype": False, "ethShare": 40, "paperStart": None,
     "weights": {t: 1 for t in LONGS},
     "alts": ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"],
@@ -35,7 +39,14 @@ HOUR = 3600000
 DAY = 24 * HOUR
 STEP = 8 * HOUR       # one candle
 STEPS = 3 * 365       # one year of 8h closes
-FEE = 0.00045         # Hyperliquid taker fee, base tier
+# Expected cost per USD traded with the bot's maker-first execution: the maker fee, and for the share that ends
+# up as taker after the maker window the taker fee plus half the spread instead (Hyperliquid base tier; half
+# spreads of these markets were 0.1 to 2 bp in October 2026). The bot itself uses the live spread.
+MAKER_FEE = 0.00015
+TAKER_FEE = 0.00045
+TAKER_SHARE = 0.3
+HALF_SPREAD = 0.0001
+COST = MAKER_FEE + TAKER_SHARE * (TAKER_FEE - MAKER_FEE + HALF_SPREAD)
 
 
 def iso(ms):
@@ -150,7 +161,11 @@ def beta(y, x):
 
 def settings(book):
     s = json.loads(json.dumps(DEFAULTS))
-    s.update(book or {})
+    book = dict(book or {})
+    # settings saved before the book was sized by the account value carry the long book in USD: keep that size
+    if "bookPerSide" not in book and float(book.get("L") or 0) > 0 and float(book.get("equity") or 0) > 0:
+        book["bookPerSide"] = round(float(book["L"]) / float(book["equity"]), 2)
+    s.update(book)
     return s
 
 
@@ -203,7 +218,108 @@ def targets_for(cx, h, s, hype_px):
     return tg
 
 
+def book_usd(s, equity=None):
+    """The long book in USD: bookPerSide times the account value, as the bot sizes it."""
+    return max(0.0, float(s["bookPerSide"]) * float(s["equity"] if equity is None else equity))
+
+
+def universe(s):
+    """The coins the strategy manages: its longs and alt basket, ETH, and every candidate the dashboard offers, so
+    a coin dropped from the basket (weight 0, alt unticked) is closed instead of being left behind unhedged.
+    Positions in any other coin are left alone."""
+    return set(s["weights"]) | set(s["alts"]) | set(LONGS) | set(ALTS) | {"ETH"}
+
+
+# ---------- the rebalancing decision (the bot trades with exactly this) ----------
+# A deviation d (USD per coin) from the target book adds d'Sd of daily PnL variance, S being the covariance of
+# the daily returns in the hedge window. Trades t minimise  gamma/2 (d+t)'S(d+t) + sum c_i |t_i|  with
+# gamma = risk aversion / account value and c_i the expected cost per USD traded. The absolute-value term gives
+# every position a zone in which trading does not pay; outside it a trade stops at the edge of the zone.
+def covariance(rows, names):
+    n = len(rows)
+    dev = []
+    for t in names:
+        col = [r[t] for r in rows]
+        m = sum(col) / n
+        dev.append([v - m for v in col])
+    k = len(names)
+    cov = [[0.0] * k for _ in range(k)]
+    for i in range(k):
+        for j in range(i, k):
+            cov[i][j] = cov[j][i] = sum(map(operator.mul, dev[i], dev[j])) / (n - 1)
+    return cov
+
+
+def quad(v, cov):
+    return sum(v[i] * cov[i][j] * v[j] for i in range(len(v)) for j in range(len(v)))
+
+
+def optimal_trades(delta, cov, cost, gamma, sweeps=1000, tol=1e-7):
+    """Coordinate descent on  gamma/2 (d + t)' S (d + t) + sum c_i |t_i|  (convex, so it converges).
+    A coin with infinite cost is never moved."""
+    k = len(delta)
+    t = [0.0] * k
+    if not gamma > 0:
+        return t
+    g = [sum(cov[i][j] * delta[j] for j in range(k)) for i in range(k)]  # S (d + t)
+    for _ in range(sweeps):
+        moved = 0.0
+        for i in range(k):
+            if cov[i][i] <= 0:
+                continue
+            b = gamma * (g[i] - cov[i][i] * t[i])
+            x = -math.copysign(max(abs(b) - cost[i], 0.0), b) / (gamma * cov[i][i])
+            d = x - t[i]
+            if d:
+                for j in range(k):
+                    g[j] += cov[j][i] * d
+                t[i] = x
+                moved = max(moved, abs(d))
+        if moved < tol:
+            break
+    return t
+
+
+def decide(current, target, rows, cost, equity, risk_aversion, min_order):
+    """Rebalancing trades in USD per coin (positive = buy) and the numbers behind the decision.
+
+    current, target: USD per coin; current holds only coins the strategy manages (see universe). rows: the daily
+    return rows of the hedge window. cost: expected cost per USD traded by coin, COST where missing."""
+    names = sorted(c for c in set(target) | set(current) if rows and c in rows[0])
+    # Opening a position or dropping one is a strategy decision, not a drift: it happens in full, and the
+    # optimiser leaves those coins where the decision puts them. It only weighs the drift of positions that
+    # exist and stay; a pure risk view would wrongly prefer staying flat over holding the hedged book.
+    forced = {c: -v for c, v in current.items() if c not in names or abs(target.get(c, 0.0)) < 1e-9}
+    least = max(float(min_order), 1e-9)       # a position below one minimum order counts as not open
+    for c in names:
+        if abs(current.get(c, 0.0)) < least and abs(target.get(c, 0.0)) >= least:
+            forced[c] = target[c] - current.get(c, 0.0)
+    rate = {c: cost.get(c, COST) for c in set(names) | set(forced)}
+    cov = covariance(rows, names)
+    gamma = max(float(risk_aversion), 0.0) / max(float(equity), 1.0)
+    before = [current.get(c, 0.0) - target.get(c, 0.0) for c in names]
+    delta = [before[i] + forced.get(c, 0.0) for i, c in enumerate(names)]
+    t = optimal_trades(delta, cov, [math.inf if c in forced else rate[c] for c in names], gamma)
+    trades = dict(forced)
+    for i, c in enumerate(names):
+        if t[i]:
+            trades[c] = trades.get(c, 0.0) + t[i]
+    trades = {c: v for c, v in trades.items() if abs(v) >= min_order}
+    after = [before[i] + trades.get(c, 0.0) for i, c in enumerate(names)]
+    risk_drift, risk_after = quad(delta, cov), quad(after, cov)
+    return trades, {
+        "risk_before": math.sqrt(max(quad(before, cov), 0.0)),  # daily 1 sigma of the deviation, USD
+        "risk_after": math.sqrt(max(risk_after, 0.0)),
+        "benefit": gamma / 2 * (risk_drift - risk_after),      # risk cost the drift trades save, USD
+        "cost": sum(abs(v) * rate[c] for c, v in trades.items()),
+        "opening": sorted(c for c in forced if c in trades and target.get(c)),
+        "closing": sorted(c for c in forced if c in trades and not target.get(c)),
+        "names": names, "cov": cov,
+    }
+
+
 def plan(snap, s):
+    """Today's book: hedge, targets and the trades that pay for themselves given the positions in s["pos"]."""
     cx = context(snap, s)
     C, per = cx["C"], cx["per"]
     N = len(C["ETH"]["closes"])
@@ -213,38 +329,39 @@ def plan(snap, s):
     yd, xd = [v - mean(h["y"]) for v in h["y"]], [v - mean(h["x"]) for v in h["x"]]
     ad = [v - mean(h["a"]) for v in h["a"]] if h["a"] else [0.0] * len(yd)
     resid = [v - h["h_eth"] * p - h["h_alt"] * q for v, p, q in zip(yd, xd, ad)]
-    targets = targets_for(cx, h, s, C["HYPE"]["mark"])
+    L = book_usd(s)
+    if not L > 0:
+        return None
+    targets = targets_for(cx, h, dict(s, L=L), C["HYPE"]["mark"])
+    pos = {k: float(v) for k, v in s["pos"].items() if float(v)}
+    mine = universe(s)
+    current = {t: q * C[t]["mark"] for t, q in pos.items() if t in mine and t in C and C[t]["mark"] > 0}
+    trades, why = decide(current, targets, h["rows"], {}, float(s["equity"]), s["riskAversion"], float(s["minTrade"]))
     orders = []
-    pos = {k: float(v) for k, v in s["pos"].items()}
-    for t in sorted(set(targets) | {k for k, v in pos.items() if v}):
-        mark = C[t]["mark"] if t in C else None
-        if not mark:
+    for t in sorted(trades, key=lambda c: (-abs(trades[c]), c)):
+        mark, dec = C[t]["mark"], C[t]["szDec"]
+        dq = round(trades[t] / mark, dec)
+        if not dq:
             continue
-        dec = C[t]["szDec"]
-        tq = round(targets.get(t, 0.0) / mark, dec)
-        cur = pos.get(t, 0.0)
-        dq = round(tq - cur, dec)
-        dusd = dq * mark
-        drift = (cur - tq) / abs(tq) if tq else None
-        trade = (tq == 0 and cur != 0) or (
-            drift is not None and abs(drift) >= s["band"] / 100 and abs(dusd) >= s["minTrade"])
-        if trade and dq != 0:
-            if tq == 0:
-                what = "Position schließen"
-            elif tq > 0:
-                what = "Long öffnen" if cur <= 0 else ("Long aufstocken" if dq > 0 else "Long reduzieren")
-            else:
-                what = "Short öffnen" if cur >= 0 else ("Short aufstocken" if dq < 0 else "Short reduzieren")
-            lev = min(C[t]["maxLev"], s["levEth"] if t == "ETH" else (s["levLong"] if tq > 0 else s["levShort"]))
-            orders.append((t, dq, dusd, what, int(lev) if tq else None))
-    return dict(h, alts=cx["alts"], L=float(s["L"]), n=len(h["rows"]), targets=targets, orders=orders,
+        cur, tgt = pos.get(t, 0.0), targets.get(t, 0.0)
+        if not tgt:
+            what = "Position schließen"
+        elif tgt > 0:
+            what = "Long öffnen" if cur <= 0 else ("Long aufstocken" if dq > 0 else "Long reduzieren")
+        else:
+            what = "Short öffnen" if cur >= 0 else ("Short aufstocken" if dq < 0 else "Short reduzieren")
+        lev = min(C[t]["maxLev"], s["levEth"] if t == "ETH" else (s["levLong"] if tgt > 0 else s["levShort"]))
+        orders.append((t, dq, dq * mark, what, int(lev) if tgt else None))
+    return dict(h, alts=cx["alts"], L=L, n=len(h["rows"]), targets=targets, orders=orders, why=why,
                 unhedged=std(h["y"]) * math.sqrt(365), resid=std(resid) * math.sqrt(365))
 
 
 def simulate(snap, s, start_ms):
-    """Paper portfolio: open all targets at the first 8h close on or after start_ms, rebalance daily at
-    00:00 UTC with the page's band rules, pay funding and taker fees. Returns the value path in USD for the
-    long/short book and, for comparison, the long basket alone."""
+    """Paper portfolio run the way the bot runs it: open every target at the first 8h close on or after
+    start_ms; after each later close re-estimate the hedge and trade only what decide() says pays for itself.
+    The long book is bookPerSide times the account value at that close. Pays funding from the history and the
+    expected cost per USD traded. Returns the value path in USD for the long/short book and, for comparison,
+    the long basket alone (same rule, its own account)."""
     cx = context(snap, s)
     C, per, lc = cx["C"], cx["per"], cx["lc"]
     t0, step, d0 = snap["t0"], snap["step"], snap["d0"]
@@ -263,7 +380,7 @@ def simulate(snap, s, start_ms):
             col.append(last)
         px[t] = col
     fund = {t: C[t].get("fund") or [] for t in cx["need"]}
-    band, min_trade = float(s["band"]) / 100, float(s["minTrade"])
+    equity0, min_order = float(s["equity"]), float(s["minTrade"])
     hype = float(s["hypeQty"]) if s["hedgeHype"] else 0.0
 
     def portfolio():
@@ -271,22 +388,6 @@ def simulate(snap, s, start_ms):
 
     ls, lo = portfolio(), portfolio()
     hype_pnl = 0.0
-
-    def rebalance(pf, tg, k):
-        for t in sorted(set(tg) | set(pf["q"])):
-            p = px[t][k]
-            tq = tg.get(t, 0.0) / p
-            cur = pf["q"].get(t, 0.0)
-            dusd = (tq - cur) * p
-            drift = (cur - tq) / abs(tq) if tq else None
-            if (tq == 0 and cur != 0) or (drift is not None and abs(drift) >= band and abs(dusd) >= min_trade):
-                if tq:
-                    pf["q"][t] = tq
-                else:
-                    del pf["q"][t]
-                pf["fees"] += abs(dusd) * FEE
-                pf["turnover"] += abs(dusd)
-                pf["trades"] += 1
 
     def accrue(pf, k, p_new, hours):
         """Carry pf from the close of step k for `hours`, ending at the prices p_new(t)."""
@@ -300,18 +401,32 @@ def simulate(snap, s, start_ms):
     def value(pf, extra=0.0):
         return sum(pf["pnl"].values()) + sum(pf["fund"].values()) - pf["fees"] + extra
 
+    def rebalance(pf, h, k, longs_only):
+        equity = equity0 + value(pf)          # the account the bot would see, HYPE spot not included
+        tg = targets_for(cx, h, dict(s, L=book_usd(s, equity)), px["HYPE"][k])
+        if longs_only:
+            tg = {t: v for t, v in tg.items() if v > 0}
+        current = {t: q * px[t][k] for t, q in pf["q"].items()}
+        trades, _ = decide(current, tg, h["rows"], {}, equity, s["riskAversion"], min_order)
+        for t, usd in trades.items():
+            if abs(tg.get(t, 0.0)) < 1e-9:
+                pf["q"].pop(t, None)          # dropped from the book: closed in full
+            else:
+                pf["q"][t] = pf["q"].get(t, 0.0) + usd / px[t][k]
+            pf["fees"] += abs(usd) * COST
+            pf["turnover"] += abs(usd)
+            pf["trades"] += 1
+
     times, v_ls, v_lo = [], [], []
     for k in range(k0, N):
         if k > k0:
             for pf in (ls, lo):
                 accrue(pf, k - 1, lambda t: px[t][k], step / HOUR)
             hype_pnl += hype * (px["HYPE"][k] - px["HYPE"][k - 1])
-        if k == k0 or (t0 + (k + 1) * step) % DAY == 0:
-            h = hedge_at(cx, k + 1, n)
-            if h:
-                tg = targets_for(cx, h, s, px["HYPE"][k])
-                rebalance(ls, tg, k)
-                rebalance(lo, {t: v for t, v in tg.items() if v > 0}, k)
+        h = hedge_at(cx, k + 1, n)
+        if h:
+            rebalance(ls, h, k, False)
+            rebalance(lo, h, k, True)
         times.append(t0 + (k + 1) * step)
         v_ls.append(value(ls, hype_pnl))
         v_lo.append(value(lo))
@@ -358,24 +473,40 @@ def paper_line(snap, s):
     return line + f" · Long-Basket allein {signed(sim['lo'][-1])} $"
 
 
+def decision_line(why, orders):
+    """One line on why the bot would or would not trade, worded like its log."""
+    if not orders:
+        if why["risk_before"] < 0.5:
+            return "Alles im Ziel – nichts zu tun."
+        return (f"Kein Trade: Die Abweichung vom Ziel (1σ ≈ {de(why['risk_before'])} $/Tag) kostet weniger, "
+                "als das Zurückhandeln kosten würde.")
+    if why["opening"] or why["closing"]:
+        parts = ([f"{len(why['opening'])} Positionen eröffnen"] if why["opening"] else []) + \
+                ([f"{len(why['closing'])} schließen"] if why["closing"] else [])
+        return ", ".join(parts) + f", Kosten ≈ {de(why['cost'], 2)} $"
+    return (f"Rebalancing lohnt sich: Risiko {de(why['risk_before'])} → {de(why['risk_after'])} $/Tag, "
+            f"Nutzen {de(why['benefit'], 2)} $ > Kosten {de(why['cost'], 2)} $")
+
+
 def summary(snap, s):
+    if not book_usd(s) > 0:
+        return "Citrini Long/Short – Kontowert oder Long-Book-Faktor ist 0, es gibt kein Zielbuch."
     p = plan(snap, s)
     if not p:
         return "Citrini Long/Short – zu wenig Kursdaten für den Hedge."
     lines = [f"Citrini Long/Short – Marktdaten Stand {snap['asOf'].replace('T', ' ').replace('Z', ' UTC')}",
-             f"Beta Long-Basket {de(p['b_book'], 2)} · Alt-Korb {de(p['b_alt'], 2)} · Hedge: ETH {de(p['h_eth'] * p['L'])} $ ({de(100 * p['share'])} %), Alts je {de(p['h_alt'] * p['L'] / max(1, len(p['alts'])))} $ ({', '.join(p['alts'])})",
+             f"Konto {de(float(s['equity']))} $ · Long-Book {de(p['L'])} $ · Beta Long-Basket {de(p['b_book'], 2)} · Alt-Korb {de(p['b_alt'], 2)}",
+             f"Hedge: ETH {de(p['h_eth'] * p['L'])} $ ({de(100 * p['share'])} %), Alts je {de(p['h_alt'] * p['L'] / max(1, len(p['alts'])))} $ ({', '.join(p['alts'])})",
              f"Rest-Volatilität {de(100 * p['resid'])} % p. a. (ungehedged {de(100 * p['unhedged'])} %), 1σ pro Tag ≈ {de(p['resid'] * p['L'] / math.sqrt(365))} $"]
     paper = paper_line(snap, s)
     if paper:
         lines.append(paper)
-    if p["orders"]:
-        lines.append("Orders außerhalb des Bands (Hebel pro Position, alles im Cross-Margin):")
-        for t, dq, dusd, what, lev in p["orders"]:
-            side = "KAUFEN" if dq > 0 else "VERKAUFEN"
-            hebel = f", Hebel {lev}x" if lev else ""
-            lines.append(f"- {side} {de(abs(dq), 4).rstrip('0').rstrip(',')} {t} (≈ {de(abs(dusd))} $) – {what}{hebel}")
-    else:
-        lines.append("Alle Positionen liegen im Band – heute nichts zu tun.")
+    line = decision_line(p["why"], p["orders"])
+    lines.append(line + (" (Hebel pro Position, alles im Cross-Margin):" if p["orders"] else ""))
+    for t, dq, dusd, what, lev in p["orders"]:
+        side = "KAUFEN" if dq > 0 else "VERKAUFEN"
+        hebel = f", Hebel {lev}x" if lev else ""
+        lines.append(f"- {side} {de(abs(dq), 4).rstrip('0').rstrip(',')} {t} (≈ {de(abs(dusd))} $) – {what}{hebel}")
     return "\n".join(lines)
 
 
