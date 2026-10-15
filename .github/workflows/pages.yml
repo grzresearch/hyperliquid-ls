@@ -1,61 +1,83 @@
-name: Seite und Marktdaten
+name: Bot und Seite
 
+# Alle 15 Minuten eine Runde des Paper-Bots, danach wird die Seite mit seinem Stand neu veröffentlicht.
 on:
   push:
     branches: [main]
   schedule:
-    - cron: "9 0,8,16 * * *"   # kurz nach jedem 8h-Schluss (UTC)
+    - cron: "7,22,37,52 * * * *"
   workflow_dispatch:
+    inputs:
+      screener:
+        description: "Screener jetzt laufen lassen"
+        type: boolean
+        default: false
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-  actions: write
+permissions: {}
 
 concurrency:
-  group: pages
+  group: bot
   cancel-in-progress: false
 
 jobs:
-  deploy:
+  # Der Bot läuft mit einem Token, das nur lesen darf; veröffentlicht wird in einem eigenen Job.
+  bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      pages: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - id: pages
+        uses: actions/configure-pages@v5
+
+      - name: Stand des Paper-Kontos holen
+        uses: actions/cache/restore@v4
+        with:
+          path: state
+          key: bot-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: bot-
+
+      - name: Bot-Runde
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DATA_URL: ${{ steps.pages.outputs.base_url }}/data
+          SCREENER: ${{ github.event.inputs.screener == 'true' && 'now' || 'auto' }}
+        run: |
+          python3 -m bot --config bot.paper.toml --once --state-dir state --site site/data \
+            --restore "$DATA_URL" --screener "$SCREENER"
+
+      - name: Stand merken
+        if: always() && hashFiles('state/paper.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state
+          key: bot-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Seite zusammenstellen
+        run: cp index.html manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: bot
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+      actions: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Letzte Marktdaten holen
-        uses: actions/cache/restore@v4
-        with:
-          path: market.json
-          key: market-${{ github.run_id }}
-          restore-keys: market-
-
-      - name: Marktdaten von Hyperliquid laden
-        run: |
-          if [ -f market.json ]; then prev=market.json; else prev=seed/market.json; fi
-          python3 refresh.py new.json --prev "$prev" > /dev/null
-          mv new.json market.json
-
-      - name: Marktdaten für den nächsten Lauf merken
-        uses: actions/cache/save@v4
-        with:
-          path: market.json
-          key: market-${{ github.run_id }}
-
-      - name: Seite zusammenstellen
-        run: |
-          mkdir -p site/data
-          cp index.html manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png site/
-          cp market.json site/data/market.json
-
-      - uses: actions/configure-pages@v5
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: site
       - id: deployment
         uses: actions/deploy-pages@v4
 

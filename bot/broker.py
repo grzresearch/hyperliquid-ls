@@ -64,8 +64,25 @@ class PaperBroker:
         os.replace(tmp, self.path)
 
     def account(self, markets):
-        upnl = sum(p["sz"] * (markets[c]["mark"] - p["avg"]) for c, p in self.s["pos"].items() if c in markets)
+        upnl = 0.0
+        for c, p in self.s["pos"].items():
+            if c in markets:
+                p["mark"] = markets[c]["mark"]
+            upnl += p["sz"] * (p.get("mark", p["avg"]) - p["avg"])
         return {"equity": self.s["cash"] + upnl, "positions": self.positions()}
+
+    def settle_missing(self, markets):
+        """Positions in a coin the exchange no longer lists (delisted) are closed at their last known mark."""
+        if len(markets) < 20:           # an answer this short is not the full market list: settle nothing
+            return {}
+        out = {}
+        for c in [c for c in self.s["pos"] if c not in markets]:
+            p = self.s["pos"].pop(c)
+            pnl = p["sz"] * (p.get("mark", p["avg"]) - p["avg"])
+            self.s["cash"] += pnl
+            self.s["realized"] += pnl
+            out[c] = pnl
+        return out
 
     def positions(self):
         return {c: p["sz"] for c, p in self.s["pos"].items()}
@@ -102,7 +119,7 @@ class PaperBroker:
         if abs(new) < 1e-12:
             self.s["pos"].pop(coin, None)
         else:
-            self.s["pos"][coin] = {"sz": new, "avg": avg}
+            self.s["pos"][coin] = {"sz": new, "avg": avg, "mark": px}
         self.s["cash"] -= fee
         self.s["fees"] += fee
         self.s["volume"] += abs(q) * px

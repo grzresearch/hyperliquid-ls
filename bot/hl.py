@@ -32,7 +32,8 @@ class Info:
                 time.sleep(15 * (attempt + 1) if getattr(e, "code", 0) == 429 else 1 + 2 * attempt)
 
     def markets(self):
-        """Perp markets by coin: mark and mid price, hourly funding, max leverage, size decimals."""
+        """Perp markets by coin: mark and mid price, hourly funding, max leverage, size decimals, 24h volume and
+        open interest in USD."""
         meta, ctxs = self.post({"type": "metaAndAssetCtxs"})
         out = {}
         for u, c in zip(meta["universe"], ctxs):
@@ -40,8 +41,21 @@ class Info:
                 continue
             mark = float(c["markPx"])
             out[u["name"]] = {"mark": mark, "mid": float(c.get("midPx") or mark), "funding": float(c["funding"]),
-                              "maxLev": int(u["maxLeverage"]), "szDec": int(u["szDecimals"])}
+                              "maxLev": int(u["maxLeverage"]), "szDec": int(u["szDecimals"]),
+                              "volume": float(c.get("dayNtlVlm") or 0), "oi": float(c.get("openInterest") or 0) * mark,
+                              "prevDay": float(c.get("prevDayPx") or 0)}
         return out
+
+    def candles(self, coin, interval, start_ms, end_ms):
+        """Completed and running candles as (open time ms, open, high, low, close, volume)."""
+        rows = self.post({"type": "candleSnapshot",
+                          "req": {"coin": coin, "interval": interval, "startTime": int(start_ms), "endTime": int(end_ms)}})
+        return [(k["t"], float(k["o"]), float(k["h"]), float(k["l"]), float(k["c"]), float(k["v"])) for k in rows]
+
+    def funding_history(self, coin, start_ms):
+        """Hourly funding rates since start_ms as (time ms, rate)."""
+        rows = self.post({"type": "fundingHistory", "coin": coin, "startTime": int(start_ms)})
+        return [(r["time"], float(r["fundingRate"])) for r in rows]
 
     def book(self, coin):
         """Best levels of the order book: (bids high to low, asks low to high) as (price, size)."""
@@ -65,7 +79,7 @@ class Info:
         return self.post({"type": "openOrders", "user": address})
 
     def closes(self, coins, days):
-        """8h closes of completed candles on a common time grid, shaped like the dashboard's market data."""
+        """8h closes of completed candles on a common time grid: {"perDay", "t0", "step", "coins": {c: closes}}."""
         now = int(time.time() * 1000)
         n = days * 3
         t0 = now // STEP * STEP - n * STEP

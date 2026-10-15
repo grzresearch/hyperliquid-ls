@@ -61,24 +61,40 @@ class Optimiser(unittest.TestCase):
 class Decision(unittest.TestCase):
     rows = [{"ETH": math.sin(i) * 0.03, "AERO": math.sin(i) * 0.04 + math.cos(3 * i) * 0.02,
              "SUI": math.sin(i) * 0.035 + math.cos(5 * i) * 0.015} for i in range(270)]
-    cfg = {**DEFAULTS, "strategy": {**DEFAULTS["strategy"], "weights": {"AERO": 1}, "alts": ["SUI"]}}
+    target = {"AERO": 3000.0, "ETH": -1200.0, "SUI": -1800.0}
+    cost = {c: 0.0003 for c in target}
 
     def test_new_positions_open_in_full(self):
-        target = {"AERO": 3000.0, "ETH": -1200.0, "SUI": -1800.0}
-        trades, _ = decide({}, target, self.rows, {c: 0.0003 for c in target}, 10000.0, self.cfg)
-        self.assertEqual(trades, target)
+        trades, why = decide({}, self.target, self.rows, self.cost, 10000.0, 3.0, 25.0)
+        self.assertEqual(trades, self.target)
+        self.assertEqual(why["opening"], sorted(self.target))
 
     def test_small_drift_is_not_traded(self):
-        target = {"AERO": 3000.0, "ETH": -1200.0, "SUI": -1800.0}
         current = {"AERO": 3060.0, "ETH": -1190.0, "SUI": -1815.0}
-        trades, why = decide(current, target, self.rows, {c: 0.0003 for c in target}, 10000.0, self.cfg)
+        trades, why = decide(current, self.target, self.rows, self.cost, 10000.0, 3.0, 25.0)
         self.assertEqual(trades, {})
         self.assertGreater(why["risk_before"], 0)
+        self.assertAlmostEqual(why["hold_risk_cost"], why["after_risk_cost"])
 
-    def test_positions_outside_the_strategy_are_ignored(self):
-        target = {"AERO": 3000.0, "ETH": -1200.0, "SUI": -1800.0}
-        trades, _ = decide({**target, "BTC": 5000.0}, target, self.rows, {c: 0.0003 for c in target}, 10000.0, self.cfg)
-        self.assertNotIn("BTC", trades)
+    def test_a_position_dropped_from_the_book_is_closed_in_full(self):
+        trades, why = decide({**self.target, "LIT": 800.0}, self.target, self.rows, self.cost, 10000.0, 3.0, 25.0)
+        self.assertEqual(trades, {"LIT": -800.0})
+        self.assertEqual(why["closing"], ["LIT"])
+
+    def test_large_drift_trades_back_to_the_edge_and_pays_for_itself(self):
+        current = {"AERO": 4500.0, "ETH": -1200.0, "SUI": -1800.0}
+        trades, why = decide(current, self.target, self.rows, self.cost, 10000.0, 3.0, 25.0)
+        self.assertLess(trades["AERO"], 0)
+        self.assertGreater(why["benefit"], why["cost"])
+        self.assertLess(why["after_risk_cost"] + why["drift_cost"], why["hold_risk_cost"])
+
+    def test_it_trades_exactly_when_a_dollar_saves_more_risk_cost_than_it_costs(self):
+        for current, expect in (({"AERO": 3060.0, "ETH": -1190.0, "SUI": -1815.0}, False),
+                                ({"AERO": 4500.0, "ETH": -1200.0, "SUI": -1800.0}, True)):
+            trades, why = decide(current, self.target, self.rows, self.cost, 10000.0, 3.0, 0.0)
+            trigger = max(r["marginal"] / r["rate"] for r in why["by_coin"])
+            self.assertEqual(bool(trades), expect)
+            self.assertEqual(trigger > 1, expect)
 
 
 class Prices(unittest.TestCase):

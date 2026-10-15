@@ -1,0 +1,43 @@
+# Der öffentliche Paper-Bot, den die GitHub Action alle 15 Minuten eine Runde laufen lässt.
+# Paper-Konto: echte Kurse und Orderbücher von Hyperliquid, keine echten Orders, kein Schlüssel nötig.
+
+mode = "paper"
+start_equity = 10000      # Startkapital in USDC
+book_per_side = 1.5       # Long-Book = 1,5 × Kontowert; die Short-Seite wird beta-neutral dazu bemessen
+
+[strategy]
+window_days = 90          # Fenster für Betas, Kovarianz und VaR
+eth_share = 40            # Anteil des Hedges in ETH in %, der Rest gleich verteilt im Alt-Korb
+alts = ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"]
+
+[screener]                # wählt die Longs, einmal am Tag
+enabled = true
+every_hours = 24
+n_longs = 7
+buffer = 3                # ein gehaltener Long bleibt, solange er unter den besten n_longs + buffer liegt
+min_volume_usd = 2000000  # 24h-Volumen auf Hyperliquid
+min_mcap_usd = 30000000
+max_cost_bps = 25         # simulierte Kosten einer Testorder von 2.500 $ (Implementation Shortfall)
+exclude = ["BTC", "ETH", "HYPE"]
+
+[screener.factors]        # Gewichte im Gesamtscore
+fee_growth = 0.12
+revenue_growth = 0.10
+volume_growth = 0.08
+acceleration = 0.05
+fee_yield = 0.10
+holder_yield = 0.05
+momentum = 0.20
+catalysts = 0.10
+funding = 0.10
+liquidity = 0.10
+
+[rebalancing]
+risk_aversion = 3         # höher = engere Zone ohne Trades, öfter handeln
+min_order_usd = 25
+
+[execution]
+maker_wait_seconds = 90   # so lange als Maker (Post-Only), danach IOC
+taker_share = 0.3         # erwarteter Taker-Anteil für die Kostensimulation
+maker_fee = 0.00015       # Hyperliquid Basisstufe
+taker_fee = 0.00045
