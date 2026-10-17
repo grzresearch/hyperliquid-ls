@@ -1,20 +1,23 @@
 """Long screener: which Hyperliquid perps are worth holding long, by protocol cash flows, momentum and catalysts.
 
 A candidate is a token with a liquid perp on Hyperliquid that maps to a DefiLlama protocol with fee data. Factors
-are turned into cross-sectional normal scores (rank based, so one outlier cannot dominate) and summed with weights:
+are turned into cross-sectional normal scores (rank based, so one outlier cannot dominate) and summed with weights
+(backtest/ measures how well each one predicted the next month's return against ETH):
 
-  fee_growth      fees of the last 30 days over the 30 days before (DefiLlama)
-  revenue_growth  the same for revenue
-  volume_growth   the same for DEX volume where DefiLlama reports it for free (perp volume is a paid endpoint there;
-                  for perp DEXs the fee growth carries that information)
-  acceleration    fees of the last 7 days over the 7 days before
-  fee_yield       annualised fees over market cap: how much cash flow the valuation buys
-  holder_yield    annualised holder revenue (buybacks, distributions) over market cap
-  momentum        30- and 90-day return relative to ETH, beta-adjusted (Hyperliquid daily candles)
-  catalysts       recent releases on the protocol's GitHub organisations and passed Snapshot votes, fading with a
-                  two-week half-life; an upgrade or a governance decision moves a token for days to weeks, not months
-  funding         minus the 7-day average funding rate: crowded longs pay to be long
-  liquidity       minus the implementation shortfall of a test order on the live book (bot/costs.py)
+  momentum         30- and 90-day return relative to ETH, beta-adjusted (Hyperliquid daily candles)
+  cashflow_growth  fees and revenue of the last 30 days over the 30 days before (DefiLlama); the two move together,
+                   so they count once
+  volume_growth    the same for DEX volume where DefiLlama reports it for free
+  acceleration     fees of the last 7 days over the 7 days before
+  revenue_yield    annualised revenue (what the protocol keeps) over market cap
+  fee_yield        annualised fees over market cap
+  holder_yield     annualised holder revenue (buybacks, distributions) over market cap; buybacks DefiLlama does not
+                   record can be added in the configuration ([screener.holder_revenue])
+  catalysts        recent releases on the protocol's GitHub organisations and passed Snapshot votes, fading with a
+                   two-week half-life
+
+Funding and liquidity are no reasons to buy. A long whose 7-day funding costs more than funding_free a year gets a
+smaller weight, none from funding_max on; a test order that costs more than max_cost_bps keeps a token out.
 
 The selection keeps a held long while it ranks within n_longs + buffer, so a small reshuffle does not trade. Weights
 lean on the score and on low volatility, capped so no name carries the book.
@@ -28,12 +31,13 @@ import statistics
 import time
 import urllib.request
 
-from . import costs
+from . import costs, hedge
 
 DAY_MS = 86400000
 LLAMA = "https://api.llama.fi"
-FACTORS = ["fee_growth", "revenue_growth", "volume_growth", "acceleration", "fee_yield", "holder_yield",
-           "momentum", "catalysts", "funding", "liquidity"]
+FACTORS = ["momentum", "cashflow_growth", "volume_growth", "acceleration", "revenue_yield", "fee_yield",
+           "holder_yield", "catalysts"]
+SHORT_FACTORS = ["momentum", "cashflow_growth", "acceleration", "revenue_yield", "holder_yield"]
 SPACE_ALIASES = {"aave.eth": "aavedao.eth"}   # spaces that moved since DefiLlama recorded them
 UPGRADE_WORDS = ("upgrade", "launch", "deploy", "activate", "migration", "fee switch", "buyback", "tokenomics",
                  " v2", " v3", " v4", " v5", "relayer", "mainnet", "integration")
@@ -70,7 +74,7 @@ def llama_entities(protocols, parents):
     for p in parents:
         ent[p["id"]] = {"id": p["id"], "name": p["name"], "symbol": (p.get("symbol") or "").upper(),
                         "gecko": p.get("gecko_id"), "mcap": p.get("mcap") or 0.0, "github": p.get("github") or [],
-                        "gov": p.get("governanceID") or []}
+                        "gov": p.get("governanceID") or [], "slug": p["id"].split("#", 1)[-1]}
     for p in protocols:
         pid = str(p["id"])
         parent = p.get("parentProtocol")
@@ -80,7 +84,7 @@ def llama_entities(protocols, parents):
         owner[pid] = pid
         ent[pid] = {"id": pid, "name": p["name"], "symbol": (p.get("symbol") or "").upper(),
                     "gecko": p.get("gecko_id"), "mcap": p.get("mcap") or 0.0, "github": p.get("github") or [],
-                    "gov": p.get("governanceID") or []}
+                    "gov": p.get("governanceID") or [], "slug": p.get("slug")}
     return ent, owner
 
 
@@ -110,6 +114,49 @@ def growth(a, short=False):
     if not cur or not prev or cur <= 0 or prev <= 0:
         return None
     return max(-2.0, min(2.0, math.log(cur / prev)))
+
+
+def factor_values(fees, revenue, holders, volume, mcap, closes, eth, events, now_ms, holder_extra=0.0):
+    """The scored factors of one token. fees, revenue, holders, volume: window sums as aggregate() or window_sums()
+    give them; closes and eth: daily closes up to now; events: catalyst events, None when no source was reachable;
+    holder_extra: yearly holder revenue DefiLlama misses (configured buybacks)."""
+    def annual(a):
+        return a["d30"] * 365 / 30 if a and a.get("d30") is not None else None
+    growths = [g for g in (growth(fees), growth(revenue)) if g is not None]
+    moms = [m for m in (relative_momentum(closes, eth, 30), relative_momentum(closes, eth, 90)) if m is not None]
+    rev, fee = annual(revenue), annual(fees)
+    hold = max(annual(holders) or 0.0, holder_extra or 0.0)
+    return {
+        "momentum": sum(moms) / len(moms) if moms else None,
+        "cashflow_growth": sum(growths) / len(growths) if growths else None,
+        "volume_growth": growth(volume),
+        "acceleration": growth(fees, short=True),
+        "revenue_yield": rev / mcap if rev is not None and mcap else None,
+        "fee_yield": fee / mcap if fee is not None and mcap else None,
+        "holder_yield": hold / mcap if mcap else None,
+        "catalysts": catalyst_score(events, now_ms) if events is not None else None,
+    }
+
+
+def window_sums(series, now_ms):
+    """aggregate()'s window sums from a daily series [(day ms, value)] as of now_ms: the last 30 days (d30, g30),
+    the 30 before (h30), the last 7 (g7) and the 7 before (h7). A window counts only if the series covers it."""
+    if not series:
+        return None
+    first = series[0][0]
+    out = {}
+
+    def total(a, b):              # days that started in [a, b): the day starting at now_ms is not over yet
+        return sum(v for t, v in series if a <= t < b)
+    if first <= now_ms - 30 * DAY_MS:
+        out["d30"] = out["g30"] = total(now_ms - 30 * DAY_MS, now_ms)
+    if first <= now_ms - 60 * DAY_MS:
+        out["h30"] = total(now_ms - 60 * DAY_MS, now_ms - 30 * DAY_MS)
+    else:
+        out.pop("g30", None)
+    if first <= now_ms - 14 * DAY_MS:
+        out["g7"], out["h7"] = total(now_ms - 7 * DAY_MS, now_ms), total(now_ms - 14 * DAY_MS, now_ms - 7 * DAY_MS)
+    return out or None
 
 
 def map_coins(coins, entities, min_mcap):
@@ -248,14 +295,23 @@ def normal_scores(values):
     return out
 
 
-def score(cands, weights):
+def score(cands, weights, factors=FACTORS):
     """Composite score per coin from the factor values in cands[coin]["factors"]; missing factors count as 0."""
-    z = {f: normal_scores({c: d["factors"].get(f) for c, d in cands.items()}) for f in FACTORS}
-    total = sum(weights.get(f, 0.0) for f in FACTORS) or 1.0
+    z = {f: normal_scores({c: d["factors"].get(f) for c, d in cands.items()}) for f in factors}
+    total = sum(weights.get(f, 0.0) for f in factors) or 1.0
     for c, d in cands.items():
-        d["z"] = {f: z[f].get(c) for f in FACTORS}
-        d["score"] = sum(weights.get(f, 0.0) * (z[f].get(c) or 0.0) for f in FACTORS) / total
+        d["z"] = {f: z[f].get(c) for f in factors}
+        d["score"] = sum(weights.get(f, 0.0) * (z[f].get(c) or 0.0) for f in factors) / total
     return cands
+
+
+def short_scores(factor_rows, weights):
+    """How good a short each coin is: the long factors that also speak against a token (weak momentum, shrinking
+    cash flows, low yields), scored across all short candidates and negated. Coins without protocol data are judged
+    by momentum alone. factor_rows: coin -> factor values."""
+    cands = {c: {"factors": f} for c, f in factor_rows.items()}
+    score(cands, weights, SHORT_FACTORS)
+    return {c: -d["score"] for c, d in cands.items()}
 
 
 MIN_LONGS = 3
@@ -288,7 +344,8 @@ def weights_for(picks, cands, cfg):
     bound are fixed there and the rest share what is left, in proportion, until nothing is out of bounds."""
     if not picks:
         return {}
-    raw = {c: max(cands[c]["score"], 0.1) / max(cands[c].get("vol") or 0.05, 0.01) for c in picks}
+    raw = {c: max(cands[c]["score"], 0.1) / max(cands[c].get("vol") or 0.05, 0.01) * cands[c].get("funding_mult", 1.0)
+           for c in picks}
     lo = min(float(cfg["min_weight"]), 1 / len(picks))
     hi = max(float(cfg["max_weight"]), 1 / len(picks))
     fixed = {}
@@ -371,27 +428,22 @@ def run(info, cfg, held=(), now_ms=None, say=print, token=None):
                 events.append(ev)
                 if ev["weight"] > 0.2 and len([x for x in evidence if x["kind"] == "vote"]) < 2:
                     evidence.append({"kind": "vote", "text": ev["title"][:90], "t": ev["t"]})
-        mom30, mom90 = relative_momentum(closes, eth, 30), relative_momentum(closes, eth, 90)
-        moms = [x for x in (mom30, mom90) if x is not None]
-        factors = {
-            "fee_growth": growth(f), "revenue_growth": growth(r), "volume_growth": growth(v),
-            "acceleration": growth(f, short=True),
-            "fee_yield": (f["d30"] * 365 / 30 / mcap) if f and mcap else None,
-            "holder_yield": (h["d30"] * 365 / 30 / mcap) if h and h["d30"] > 0 and mcap else 0.0,
-            "momentum": sum(moms) / len(moms) if moms else None,
-            "catalysts": catalyst_score(events, now_ms) if (sources["github"] or votes) else None,
-            "funding": -fund,
-            "liquidity": -math.log(max(cost, 0.1)) if cost is not None else None,
-        }
+        extra = float((cfg.get("holder_revenue") or {}).get(c, 0.0))
+        factors = factor_values(f, r, h, v, mcap, closes, eth, events if (sources["github"] or votes) else None,
+                                now_ms, extra)
+        mult = hedge.funding_multiplier(fund, cfg.get("funding_free", 0.25), cfg.get("funding_max", 1.0))
         reasons = []
         limit = cfg["max_cost_bps"] * (2 if c in held else 1)   # a held name is not dropped for a passing spike
         if cost is None or cost > limit:
             reasons.append(f"Handelskosten {cost:.0f} bp" if cost is not None else "kein Orderbuch")
         if len(closes) < 31:
             reasons.append("weniger als 30 Tage gelistet")
+        if mult <= 0:
+            reasons.append(f"Funding {100 * fund:.0f} % p. a.")
         cands[c] = {"coin": c, "name": e["name"], "mcap": mcap, "volume": m["volume"], "oi": m["oi"],
                     "fees30": f["d30"] if f else None, "revenue30": r["d30"] if r else None,
-                    "holders30": h["d30"] if h else None, "funding": fund, "cost_bps": cost,
+                    "holders30": max(h["d30"] if h else 0.0, extra * 30 / 365) or (0.0 if h else None),
+                    "holder_extra": extra or None, "funding": fund, "funding_mult": mult, "cost_bps": cost,
                     "vol": daily_vol(closes), "factors": factors, "evidence": evidence,
                     "eligible": not reasons, "reason": ", ".join(reasons)}
         time.sleep(0.1)
@@ -405,4 +457,5 @@ def run(info, cfg, held=(), now_ms=None, say=print, token=None):
             d["status"] = "fällt raus" if c in held else ("ausgeschlossen" if not d["eligible"] else "Kandidat")
     return {"t": now_ms, "picks": [{"coin": c, "weight": weights[c], "score": cands[c]["score"]} for c in picks],
             "candidates": sorted(cands.values(), key=lambda d: -d["score"]), "sources": sources,
-            "factor_weights": cfg["factors"], "n_longs": cfg["n_longs"], "pool": len(pool)}
+            "factor_weights": cfg["factors"], "n_longs": cfg["n_longs"], "pool": len(pool),
+            "limits": {k: cfg.get(k) for k in ("funding_free", "funding_max", "max_cost_bps", "test_order_usd")}}

@@ -6,3 +6,4 @@ bot.toml
 /logs/
 STOP
 .env
+/backtest/cache/

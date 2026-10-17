@@ -8,6 +8,7 @@ History (state/history.json, published as data/history.json):
   events  every rebalancing: the decision, the trades with simulated and realised implementation shortfall
   runs    every check: [time ms, account value, risk before, risk after, trades, risk cost of holding the drift,
           cost of trading all of it back]
+  size    the book size the volatility forecast set last (bot/risk.py); kept when a round has no forecast
 
 The page draws 5- and 15-minute candles from m1 and 1-hour to daily candles from m15.
 """
@@ -135,7 +136,7 @@ class History:
             "t": now_ms, "risk_before": round(why["risk_before"], 2), "risk_after": round(why["risk_after"], 2),
             "benefit": round(why["benefit"], 4), "cost": round(why["cost"], 4),
             "hold_risk_cost": round(why["hold_risk_cost"], 4), "full_cost": round(why["full_cost"], 4),
-            "opening": why["opening"], "closing": why["closing"], "trades": rows,
+            "opening": why["opening"], "closing": why["closing"], "resized": why.get("resized", []), "trades": rows,
             "fees": round(result.get("fees", 0.0), 4), "seconds": round(result.get("seconds", 0.0), 1),
             "maker": result.get("maker", 0), "taker": result.get("taker", 0),
             "left": result.get("left", {})})
@@ -160,14 +161,16 @@ def site_payload(now_ms, mode, cfg, acct, paper, positions, marks, target, h, de
                      "upnl": q * (mark - pos["avg"]) if pos and mark else None,
                      "target": target.get(coin, 0.0), "weight": weights.get(coin),
                      "score": longs_score.get(coin), "beta": book["betas"].get(coin)})
-    return {"v": 1, "t": now_ms, "mode": mode, "interval_min": cfg["rebalancing"].get("check_minutes", 15),
+    return {"v": 3, "t": now_ms, "mode": mode, "interval_min": cfg["rebalancing"].get("check_minutes", 15),
             "account": acct, "positions": rows, "book": book, "decision": decision, "risk": var,
             "screener": screener,
             "config": {"risk_aversion": cfg["rebalancing"]["risk_aversion"],
                        "min_order": cfg["rebalancing"]["min_order_usd"], "book_per_side": cfg["book_per_side"],
                        "maker_fee": cfg["execution"]["maker_fee"], "taker_fee": cfg["execution"]["taker_fee"],
                        "taker_share": cfg["execution"]["taker_share"], "window_days": cfg["strategy"]["window_days"],
-                       "eth_share": cfg["strategy"]["eth_share"], "alts": cfg["strategy"]["alts"]},
+                       "eth_share": cfg["strategy"]["eth_share"], "alts": cfg["strategy"]["alts"],
+                       "risk": {k: cfg["risk"][k] for k in ("jump_loss", "vol_target", "min_scale", "history_days",
+                                                            "size_band")}},
             "paper": paper}
 
 

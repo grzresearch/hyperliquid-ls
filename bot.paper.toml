@@ -6,9 +6,7 @@ start_equity = 10000      # Startkapital in USDC
 book_per_side = 1.5       # Long-Book = 1,5 × Kontowert; die Short-Seite wird beta-neutral dazu bemessen
 
 [strategy]
-window_days = 90          # Fenster für Betas, Kovarianz und VaR
-eth_share = 40            # Anteil des Hedges in ETH in %, der Rest gleich verteilt im Alt-Korb
-alts = ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"]
+window_days = 90          # Fenster für Betas, Kovarianz, Short-Auswahl und VaR
 
 [screener]                # wählt die Longs, einmal am Tag
 enabled = true
@@ -18,19 +16,39 @@ buffer = 3                # ein gehaltener Long bleibt, solange er unter den bes
 min_volume_usd = 2000000  # 24h-Volumen auf Hyperliquid
 min_mcap_usd = 30000000
 max_cost_bps = 25         # simulierte Kosten einer Testorder von 2.500 $ (Implementation Shortfall)
+funding_free = 0.25       # Funding bis 25 % p. a. (7-Tage-Mittel) ändert nichts,
+funding_max = 1.0         # darüber schrumpft die Position, ab 100 % p. a. kauft er nicht
 exclude = ["BTC", "ETH", "HYPE"]
 
-[screener.factors]        # Gewichte im Gesamtscore
-fee_growth = 0.12
-revenue_growth = 0.10
-volume_growth = 0.08
+[screener.holder_revenue] # Rückkäufe pro Jahr in USD, die DefiLlama nicht als Holder Revenue führt
+AAVE = 50_000_000
+
+[screener.factors]        # Gewichte im Gesamtscore, gemessen im Backtest (backtest/README.md)
+holder_yield = 0.35
+revenue_yield = 0.15
+fee_yield = 0.15
+momentum = 0.10
+cashflow_growth = 0.10
+catalysts = 0.05
 acceleration = 0.05
-fee_yield = 0.10
-holder_yield = 0.05
-momentum = 0.20
-catalysts = 0.10
-funding = 0.10
-liquidity = 0.10
+volume_growth = 0.05
+
+[hedge]                   # die Shorts: die liquiden Perps, die den Long-Basket am besten absichern
+method = "minvar"         # "fixed" = alter fester Korb aus ETH und [strategy] alts
+exclude = ["HYPE"]
+min_names = 6
+max_names = 10
+max_share = 0.25          # höchstens 25 % der Short-Seite in einem Namen (weniger bei hoher Volatilität)
+tilt_slack = 0.0          # Short-Score aus: im Backtest sicherte er schlechter ab (> 0: so viel mehr Restvarianz erlaubt)
+shrink = 0.6              # Schrumpfung der Kovarianz zu einem Ein-Faktor-Modell (ETH)
+keep_slack = 0.15         # bisherige Shorts bleiben, solange sie höchstens 15 % schlechter absichern
+
+[risk]                    # Fat Tails, Volatilitäts-Cluster und Regime (bot/risk.py, Backtest in backtest/README.md)
+jump_loss = 0.05          # eine Position verliert an ihrem schlimmsten eigenen Tag des letzten Jahres höchstens 5 % des Kontos
+history_days = 365        # Kursgeschichte für Sprünge, GARCH und Hidden-Markov-Modell
+vol_target = true         # Buch kleiner, solange die erwartete Volatilität über der üblichen liegt, nie größer
+min_scale = 0.5           # höchstens auf die Hälfte
+size_band = 0.10          # liegt das Buch mehr als 10 % neben seiner Zielgröße, bringt er es als Ganzes dorthin
 
 [rebalancing]
 risk_aversion = 3         # höher = engere Zone ohne Trades, öfter handeln

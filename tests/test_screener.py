@@ -1,4 +1,5 @@
 """Screener pieces on small, hand-made inputs shaped like DefiLlama, GitHub and Snapshot responses."""
+import math
 import os
 import sys
 import unittest
@@ -127,6 +128,41 @@ class Selection(unittest.TestCase):
         self.assertAlmostEqual(S.relative_momentum(coin, eth, 30), 0.0, places=9)
         lifted = [c * math.exp(0.01 * i) for i, c in enumerate(coin)]    # plus 1 % a day of its own
         self.assertAlmostEqual(S.relative_momentum(lifted, eth, 30), 0.30, places=6)
+
+
+class Factors(unittest.TestCase):
+    def test_window_sums_use_only_finished_days(self):
+        series = [[NOW - i * DAY, 1.0] for i in range(90, -1, -1)]          # one per day up to and including today
+        w = S.window_sums(series, NOW)
+        self.assertEqual(w["d30"], 30.0)                                     # today's partial day is not counted
+        self.assertEqual(w["h30"], 30.0)
+        self.assertEqual((w["g7"], w["h7"]), (7.0, 7.0))
+        self.assertIsNone(S.window_sums([[NOW - 10 * DAY, 1.0]], NOW))
+
+    def test_fees_and_revenue_growth_count_once_and_buybacks_can_be_added(self):
+        fees = {"d30": 2e6, "g30": 2e6, "h30": 1e6, "g7": 5e5, "h7": 5e5}
+        rev = {"d30": 1e6, "g30": 1e6, "h30": 1e6}
+        f = S.factor_values(fees, rev, None, None, 1e8, [], [], None, NOW)
+        self.assertAlmostEqual(f["cashflow_growth"], (math.log(2) + 0.0) / 2)
+        self.assertAlmostEqual(f["revenue_yield"], 1e6 * 365 / 30 / 1e8)
+        self.assertEqual(f["holder_yield"], 0.0)
+        self.assertIsNone(f["catalysts"])
+        g = S.factor_values(fees, rev, {"d30": 1e5}, None, 1e8, [], [], [], NOW, holder_extra=5e6)
+        self.assertAlmostEqual(g["holder_yield"], 0.05)                       # the configured buybacks win
+        self.assertEqual(g["catalysts"], 0.0)
+
+    def test_short_scores_turn_the_long_factors_around(self):
+        rows = {"WEAK": {"momentum": -0.4, "cashflow_growth": -0.5}, "MID": {"momentum": 0.0},
+                "STRONG": {"momentum": 0.5, "cashflow_growth": 0.6}}
+        sc = S.short_scores(rows, {"momentum": 0.5, "cashflow_growth": 0.5})
+        self.assertGreater(sc["WEAK"], sc["MID"])
+        self.assertGreater(sc["MID"], sc["STRONG"])
+
+    def test_expensive_funding_shrinks_a_long(self):
+        c = {"A": {"score": 0.5, "vol": 0.04, "funding_mult": 1.0}, "B": {"score": 0.5, "vol": 0.04, "funding_mult": 0.5},
+             "C": {"score": 0.5, "vol": 0.04, "funding_mult": 1.0}}
+        w = S.weights_for(["A", "B", "C"], c, dict(CFG, max_weight=0.6, min_weight=0.0))
+        self.assertAlmostEqual(w["B"], w["A"] / 2)
 
 
 if __name__ == "__main__":

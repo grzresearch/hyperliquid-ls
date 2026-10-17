@@ -7,9 +7,10 @@
     python3 -m bot --site site/data      Stand für die Seite schreiben (bot.json, history.json)
     python3 -m bot --screener now        den Screener sofort laufen lassen
 
-Die Longs wählt ein Screener (Protokoll-Cashflows, Momentum, Katalysatoren), die Short-Seite ist ein beta-neutraler
-Hedge aus ETH und einem Alt-Korb. Rebalanciert wird nicht nach Uhrzeit, sondern sobald der Risikoabbau die erwarteten
-Handelskosten übersteigt; die Kosten simuliert er vorher auf dem Live-Orderbuch (Implementation Shortfall).
+Die Longs wählt ein Screener (Holder-, Revenue- und Fee-Rendite, Cashflow-Wachstum, Momentum, Katalysatoren; Funding
+verkleinert nur die Position). Die Short-Seite sind die liquiden Perps, mit denen der Long-Basket am wenigsten
+schwankt, beta-neutral zu ETH (bot/hedge.py). Rebalanciert wird nicht nach Uhrzeit, sondern sobald der Risikoabbau die
+erwarteten Handelskosten übersteigt; die Kosten simuliert er vorher auf dem Live-Orderbuch (Implementation Shortfall).
 Ausgeführt wird zuerst als Maker (Post-Only), der Rest nach dem Maker-Fenster als IOC mit Preisgrenze. Eine Datei STOP
 im Arbeitsordner hält ihn vom Handeln ab. Für testnet/mainnet braucht er die öffentliche Adresse des Kontos
 (account.address oder HL_ACCOUNT) und den Schlüssel einer API-Wallet in HL_API_KEY.
@@ -17,6 +18,7 @@ im Arbeitsordner hält ihn vom Handeln ab. Für testnet/mainnet braucht er die �
 import argparse
 import copy
 import json
+import math
 import os
 import sys
 import time
@@ -28,7 +30,7 @@ if sys.version_info < (3, 11):
     sys.exit("Der Bot braucht Python 3.11 oder neuer (python3 --version).")
 import tomllib  # noqa: E402
 
-from . import costs, model, report, screener  # noqa: E402
+from . import costs, hedge, model, report, risk, screener  # noqa: E402
 from .broker import FatalError, LiveBroker, PaperBroker, execute  # noqa: E402
 from .hl import MAINNET, TESTNET, Info  # noqa: E402
 
@@ -37,15 +39,19 @@ DEFAULTS = {
     "start_equity": 10000.0,
     "book_per_side": 1.5,
     "strategy": {"window_days": 90, "eth_share": 40,
-                 "alts": ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"],
+                 "alts": ["SUI", "AVAX", "ADA", "TAO", "XPL", "MORPHO"],   # nur für hedge.method = "fixed"
                  "weights": {}},          # feste Longs, nur wenn der Screener aus ist
     "screener": {"enabled": True, "every_hours": 24, "n_longs": 7, "buffer": 3, "hold_floor": -0.25,
                  "min_volume_usd": 2e6, "min_mcap_usd": 3e7, "min_leverage": 3, "max_cost_bps": 25,
                  "test_order_usd": 2500, "max_weight": 0.25, "min_weight": 0.05,
+                 "funding_free": 0.25, "funding_max": 1.0,
                  "exclude": ["BTC", "ETH", "HYPE"],
-                 "factors": {"fee_growth": 0.12, "revenue_growth": 0.10, "volume_growth": 0.08, "acceleration": 0.05,
-                             "fee_yield": 0.10, "holder_yield": 0.05, "momentum": 0.20, "catalysts": 0.10,
-                             "funding": 0.10, "liquidity": 0.10}},
+                 "holder_revenue": {"AAVE": 50e6},     # Rückkäufe pro Jahr, die DefiLlama nicht erfasst
+                 "factors": {"holder_yield": 0.35, "revenue_yield": 0.15, "fee_yield": 0.15, "momentum": 0.10,
+                             "cashflow_growth": 0.10, "catalysts": 0.05, "acceleration": 0.05, "volume_growth": 0.05}},
+    "hedge": {"method": "minvar", "exclude": ["HYPE"]},     # die übrigen Werte: bot/hedge.py, DEFAULTS
+    "risk": {"jump_loss": 0.05, "history_days": 365, "young_days": 180, "floor_down": 0.16, "floor_up": 0.31,
+             "vol_target": True, "min_scale": 0.5, "size_band": 0.10, "cap_tolerance": 0.05},
     "rebalancing": {"risk_aversion": 3.0, "min_order_usd": 25.0, "loop_seconds": 60, "check_minutes": 15},
     "execution": {"maker_wait_seconds": 90, "requote_seconds": 10, "max_slippage": 0.005, "taker_share": 0.3,
                   "maker_fee": 0.00015, "taker_fee": 0.00045, "unfilled_bps": 50, "beta_tolerance": 0.25,
@@ -193,19 +199,28 @@ class Bot:
             return {p["coin"]: p["weight"] for p in self.scr["picks"]}
         return {c: float(w) for c, w in self.cfg["strategy"]["weights"].items() if float(w) > 0}
 
+    def shorts(self):
+        """The short book chosen for the screener's longs (bot/hedge.py). Empty with the fixed basket, and with fixed
+        longs from [strategy.weights]: those are hedged with ETH alone."""
+        if self.cfg["hedge"].get("method") != "minvar" or not self.cfg["screener"].get("enabled"):
+            return {}
+        return dict(((self.scr or {}).get("hedge") or {}).get("weights") or {})
+
     def strategy_coins(self):
-        return set(self.longs()) | set(self.cfg["strategy"]["alts"]) | {"ETH"}
+        return set(self.longs()) | set(self.shorts()) | set(self.cfg["strategy"]["alts"]) | {"ETH"}
 
     def run_screener(self, held, now_ms):
         sc = self.cfg["screener"]
         if not sc.get("enabled") or self.screener_mode == "off":
             return
         last = self.scr or {}
-        due = (now_ms - last.get("t", 0)) / 3600000 >= sc["every_hours"]
+        due = (now_ms - last.get("t", 0)) / 3600000 >= sc["every_hours"] or last.get("factor_weights") != sc["factors"]
         cooled = (now_ms - last.get("tried", 0)) / 3600000 >= RETRY_HOURS
         if self.scr and self.screener_mode != "now" and not (due and cooled):
+            self.refresh_hedge(now_ms)
             return
-        conf = dict(sc, exclude=sorted(set(sc["exclude"]) | set(self.cfg["strategy"]["alts"])),
+        fixed = self.cfg["hedge"].get("method") != "minvar"
+        conf = dict(sc, exclude=sorted(set(sc["exclude"]) | (set(self.cfg["strategy"]["alts"]) if fixed else set())),
                     taker_fee=self.cfg["execution"]["taker_fee"])
         keep = ", es bleibt bei der letzten Auswahl" if self.scr else ""
         try:
@@ -217,10 +232,126 @@ class Bot:
             self.log.say(f"Screener fand nur {len(result['picks'])} handelbare Longs{keep}")
             return self.screener_tried(now_ms)
         result["tried"] = now_ms
+        previous = (self.scr or {}).get("hedge")
+        result["hedge"] = self.run_hedge(result, previous, now_ms)
+        if result["hedge"] is None:     # keep the last short book (a short that became a long drops out in round())
+            result["hedge"], result["hedge_tried"] = previous, now_ms
         self.scr = result
         report.save_json(self.scr_path, result)
         self.screener_mode = "auto"
         self.log.say("Screener: " + ", ".join(f"{p['coin']} {de(100 * p['weight'])} %" for p in result["picks"]))
+
+    def hedge_settings(self):
+        """Everything that decides the short book. A change starts the choice afresh, without the old shorts."""
+        hc, sc = self.cfg["hedge"], self.cfg["screener"]
+        out = {k: hc.get(k, v) for k, v in hedge.DEFAULTS.items()}
+        out.update(funding_free=sc.get("funding_free", 0.25), funding_max=sc.get("funding_max", 1.0),
+                   exclude=sorted(hc.get("exclude", [])), window_days=int(self.cfg["strategy"]["window_days"]))
+        return out
+
+    def refresh_hedge(self, now_ms):
+        """Between screener runs: choose the short book again when the last screener run could not (none yet, or
+        one chosen for earlier longs) or the settings changed. A failed attempt keeps the old book and waits
+        RETRY_HOURS."""
+        last = self.scr or {}
+        if self.cfg["hedge"].get("method") != "minvar" or not last.get("picks"):
+            return
+        h = last.get("hedge") or {}
+        if h.get("settings") == self.hedge_settings() and h.get("t", 0) >= last.get("t", 0):
+            return
+        if (now_ms - last.get("hedge_tried", 0)) / 3600000 < RETRY_HOURS:
+            return
+        new = self.run_hedge(last, last.get("hedge"), now_ms)
+        if new:
+            self.scr["hedge"] = new
+            self.scr.pop("hedge_tried", None)
+        else:
+            self.scr["hedge_tried"] = now_ms
+        report.save_json(self.scr_path, self.scr)
+
+    def run_hedge(self, result, previous, now_ms):
+        """The short book for the screener's picks: the liquid perps that hedge them best (bot/hedge.py). None when
+        it cannot be computed; the bot then keeps the previous one or the fixed basket."""
+        hc, sc, ex = self.cfg["hedge"], self.cfg["screener"], self.cfg["execution"]
+        if hc.get("method") != "minvar":
+            return None
+        try:
+            settings = self.hedge_settings()
+            longs = {p["coin"]: p["weight"] for p in result["picks"]}
+            markets = self.history_info.markets()
+            pool = sorted(c for c, m in markets.items() if c not in longs and c not in settings["exclude"]
+                          and m["maxLev"] >= sc["min_leverage"] and m["volume"] >= sc["min_volume_usd"])
+            if self.mode == "testnet":  # history from mainnet, but only what the testnet trades
+                venue = self.venue.markets()
+                pool = [c for c in pool if c in venue]
+            days = settings["window_days"]
+            snap = self.history_info.closes(sorted(set(pool) | set(longs) | {"ETH"}), days + 20)
+            rows, usable = hedge.window_rows(snap, list(longs), pool, days)
+            if not rows:
+                raise RuntimeError("zu wenig Kursdaten der Longs")
+            per = int(snap.get("perDay", 3))
+            scores = self.short_scores(result, snap, usable) if settings["tilt_slack"] > 0 else None
+            cost = {}
+            for c in usable:            # a short pays negative funding; the 7-day mean decides, as for the longs
+                yearly = -markets[c]["funding"] * 24 * 365
+                if yearly > settings["funding_free"]:
+                    hist = self.history_info.funding_history(c, now_ms - 7 * screener.DAY_MS)
+                    yearly = -sum(r for _, r in hist) / len(hist) * 24 * 365 if hist else yearly
+                cost[c] = yearly
+            held = None                 # the current shorts get their head start only under the same settings
+            if previous and previous.get("settings") == settings:
+                held = {c: w for c, w in (previous.get("weights") or {}).items() if c in usable} or None
+
+            def thin(c):                # the test order on the live book costs too much, or there is no book
+                try:
+                    bids, asks = self.venue.book(c)
+                except Exception:
+                    return True
+                if not bids or not asks:
+                    return True
+                return (costs.taker_shortfall(bids, asks, True, sc["test_order_usd"], ex["taker_fee"])["total"]
+                        + costs.taker_shortfall(bids, asks, False, sc["test_order_usd"], ex["taker_fee"])["total"]
+                        ) / 2 > sc["max_cost_bps"]
+            excluded = set()
+            for attempt in range(3):    # a chosen short whose book is too thin is replaced, twice at most
+                res = hedge.choose(rows, longs, [c for c in usable if c not in excluded], settings, score=scores,
+                                   held=held, cost=cost)
+                bad = {c for c in res["weights"] if thin(c)}
+                if not bad:
+                    break
+                if attempt == 2:
+                    self.log.say(f"Orderbuch dünn, trotzdem im Short-Buch: {', '.join(sorted(bad))}")
+                    break
+                excluded |= bad
+            res.update(t=now_ms, excluded=sorted(excluded), days=len(rows) // per, settings=settings)
+            if res.get("oos"):          # in days, not in 8-hour steps
+                res["oos"].update(days_fit=res["oos"]["days_fit"] // per, days_test=res["oos"]["days_test"] // per)
+            for cand in res["candidates"]:
+                cand["funding"] = -cost.get(cand["coin"], 0.0)
+            self.log.say("Shorts: " + ", ".join(f"{c} {de(100 * w)} %" for c, w in
+                                                 sorted(res["weights"].items(), key=lambda kv: -kv[1]))
+                         + f" · Restvolatilität {de(100 * res['resid_vol'])} % statt {de(100 * res['eth_only'])} % nur"
+                           " mit ETH" + (" · bisherige Shorts behalten" if res["kept"] else ""))
+            return res
+        except Exception as e:
+            self.log.say(f"Short-Auswahl fehlgeschlagen ({type(e).__name__}: {e})")
+            return None
+
+    def short_scores(self, result, snap, usable):
+        """Short score per candidate, only needed with a tilt: the long factors turned around. Coins without protocol
+        data get their momentum from the closes."""
+        per, C = int(snap.get("perDay", 3)), snap["coins"]
+        daily = {c: [v for v in C[c]["closes"][::-1][::per][::-1] if v] for c in usable + ["ETH"]}
+        by_coin = {d["coin"]: d for d in result.get("candidates", [])}
+        rows = {}
+        for c in usable:
+            f = dict(by_coin[c]["factors"]) if c in by_coin else {}
+            if f.get("momentum") is None:
+                moms = [m for m in (screener.relative_momentum(daily[c], daily["ETH"], 30),
+                                    screener.relative_momentum(daily[c], daily["ETH"], 90)) if m is not None]
+                f["momentum"] = sum(moms) / len(moms) if moms else None
+            rows[c] = f
+        return screener.short_scores(rows, self.cfg["screener"]["factors"])
 
     def screener_tried(self, now_ms):
         """Remember a failed attempt, so the next one waits RETRY_HOURS. Without earlier picks there is nothing to
@@ -252,23 +383,68 @@ class Bot:
         self.run_screener([c for c, q in positions.items() if q > 0], now_ms)
 
         # the book is sized only from what this market trades: a coin that is missing must not leave its hedge behind
-        wanted = self.longs()
+        wanted, wanted_shorts = self.longs(), self.shorts()
+        fixed = cfg["hedge"].get("method") != "minvar"      # without a short book, minvar hedges with ETH alone
         longs = {c: w for c, w in wanted.items() if c in markets}
-        alts = [a for a in cfg["strategy"]["alts"] if a not in longs and a in markets]
-        missing = sorted(set(wanted) - set(longs)) + [a for a in cfg["strategy"]["alts"] if a not in markets]
+        shorts = {c: w for c, w in wanted_shorts.items() if c in markets and c not in longs}
+        alts = [a for a in cfg["strategy"]["alts"] if a not in longs and a in markets] if fixed else []
+        missing = sorted((set(wanted) | set(wanted_shorts) | (set(cfg["strategy"]["alts"]) if fixed else set()))
+                         - set(markets))
         if missing:
             log.say(f"Auf diesem Markt nicht handelbar, wird ausgelassen: {', '.join(missing)}")
         if not longs:
             raise RuntimeError("Keine Longs: Screener ohne Ergebnis und keine festen Gewichte in [strategy.weights]")
         if "ETH" not in markets:
             raise RuntimeError("ETH ist auf diesem Markt nicht handelbar, ohne ETH gibt es keinen Hedge")
-        s = {"weights": longs, "alts": alts, "window": cfg["strategy"]["window_days"],
+        s = {"weights": longs, "shorts": shorts, "alts": alts, "window": cfg["strategy"]["window_days"],
              "ethShare": cfg["strategy"]["eth_share"]}
-        snap = self.closes(set(longs) | set(alts) | {"ETH"}, int(cfg["strategy"]["window_days"]) + 20)
+        rk = cfg["risk"]
+        days = int(rk["history_days"])
+        snap = self.closes(set(longs) | set(shorts) | set(alts) | {"ETH"} | {c for c in positions if c in markets},
+                           max(int(cfg["strategy"]["window_days"]) + 20, days + 5))
         L = cfg["book_per_side"] * equity
-        target, h = model.targets(snap, s, L)
+
+        # fat tails: no position may lose more than jump_loss of the account on its worst own move of the year
+        side = {**{c: -1 for c in list(shorts) + alts}, **{c: 1 for c in longs}}
+        jump = risk.jumps(snap, list(side), days, rk["young_days"], rk["floor_down"], rk["floor_up"])
+        caps = risk.position_caps(jump, equity, rk["jump_loss"], side)
+        target, h = model.targets(snap, s, L, caps)
+        h["jumps"] = jump
+        if h["capped"]:
+            log.say("Sprunglimits: " + ", ".join(f"{c} {signed(x['cap'])} $ statt {signed(x['want'])} $"
+                                                 for c, x in sorted(h["capped"].items()))
+                    + ("; was die Shorts nicht tragen, übernimmt ETH" if any(x["want"] < 0 for x in h["capped"].values())
+                       else ""))
+        # volatility regime: GARCH and HMM on the book's year say how restless tomorrow is likely to be. Without a
+        # view (an error, too little history) the book keeps the size it had, so a passing failure moves nothing.
+        last = float(self.hist.h.get("size") or 1.0)
+        try:
+            view = self.risk_view(snap, target, h, days)
+        except Exception as e:      # the risk layer must never stop the hedge
+            log.say(f"Risiko-Schicht fehlgeschlagen ({type(e).__name__}: {e}), Buchgröße bleibt {de(100 * last)} %")
+            view = {"var": 0.0, "ref": 0.0, "days": 0, "risk_scale": 1.0, "size": last}
+        if not view["days"]:
+            view["size"] = last
+        size = view["size"]
+        self.hist.h["size"] = round(size, 4)
+        if size < 1:
+            target = {c: v * size for c, v in target.items()}
+        need = sum(abs(v) / leverage_for(c, v, markets, cfg) for c, v in target.items())
+        room = cfg["execution"]["max_margin_use"] * equity
+        if need > room:             # a target the margin cannot carry would keep the size band firing in vain
+            target = {c: v * room / need for c, v in target.items()}
+            log.say(f"Ziel auf {de(100 * room / need)} % verkleinert: mehr Margin, als max_margin_use erlaubt")
         managed = set(target) | self.hist.traded | (set(positions) if self.mode == "paper" else set())
         current = {c: q * markets[c]["mid"] for c, q in positions.items() if c in markets and c in managed}
+
+        # forced back to the target in full, whatever the drift rule says: a position beyond its jump limit, and the
+        # whole book once its size is more than size_band off (a hedged book that is simply too big hardly shows in
+        # the covariance, so the rule alone would never shrink it)
+        force = {c for c, v in current.items()
+                 if abs(v) > caps.get(c, math.inf) * (1 + float(rk["cap_tolerance"])) + rb["min_order_usd"]}
+        held, aim = sum(abs(v) for v in current.values()), sum(abs(v) for v in target.values())
+        if held > 0 and aim > 0 and abs(held / aim - 1) > float(rk["size_band"]):
+            force |= set(current) | set(target)
 
         # expected cost of each trade, simulated on the live book (implementation shortfall)
         books, rate, detail = {}, {}, {}
@@ -276,20 +452,26 @@ class Bot:
             books[c] = self.venue.book(c)
             dev = current.get(c, 0.0) - target.get(c, 0.0)
             rate[c], detail[c] = costs.expected_cost(*books[c], dev < 0, max(abs(dev), rb["min_order_usd"]), ex)
-        trades, why = model.decide(current, target, h["rows"], rate, equity, rb["risk_aversion"], rb["min_order_usd"])
+        trades, why = model.decide(current, target, h["rows"], rate, equity, rb["risk_aversion"], rb["min_order_usd"],
+                                   view["risk_scale"], force, caps)
         trades, scale = margin_guard(trades, current, target, markets, equity, cfg)
+        for key in ("opening", "closing", "resized"):      # what margin_guard left of them
+            why[key] = [c for c in why[key] if c in trades]
         arrival = {c: (books[c][0][0][0] + books[c][1][0][0]) / 2 for c in trades if books[c][0] and books[c][1]}
         betas = model.betas(h["rows"], [c for c in h["rows"][0]])
 
         head = (f"Konto {de(equity)} $" + (f" ({signed(100 * (equity / self.broker.s['start'] - 1), 2)} %)"
                                             if self.mode == "paper" else "")
-                + f" · Abweichung 1σ {de(why['risk_before'])} $/Tag")
+                + f" · Abweichung 1σ {de(why['risk_before'])} $/Tag"
+                + (f" · Volatilität {de(100 * math.sqrt(view['var']) * size / equity, 1)} % des Kontos pro Tag"
+                   f" ({de(view['risk_scale'] ** 0.5, 2)} × Fenster), Buch {de(100 * size)} %" if view["days"] else ""))
         cut = f" (wegen Margin auf {de(100 * scale)} % gekürzt)" if scale < 1 else ""
         if not trades:
             log.say(head + " · kein Trade")
-        elif why["opening"] or why["closing"]:
+        elif why["opening"] or why["closing"] or why["resized"]:
             parts = ([f"{len(why['opening'])} eröffnen"] if why["opening"] else []) + \
-                    ([f"{len(why['closing'])} schließen"] if why["closing"] else [])
+                    ([f"{len(why['closing'])} schließen"] if why["closing"] else []) + \
+                    ([f"{len(why['resized'])} auf Sprunglimit oder Buchgröße bringen"] if why["resized"] else [])
             log.say(head + " · " + ", ".join(parts) + f", Kosten ≈ {de(why['cost'], 2)} $" + cut)
         else:
             log.say(head + f" · Rebalancing lohnt sich: Risiko {de(why['risk_before'])} → {de(why['risk_after'])} $/Tag,"
@@ -308,7 +490,7 @@ class Bot:
                     err = self.broker.set_leverage(c, leverage_for(c, target.get(c, current.get(c, 0.0)), markets, cfg))
                     if err:
                         log.say(f"  Hebel für {c} nicht gesetzt: {err}")
-                res = execute(self.broker, trades, markets, betas, cfg, L, log.say)
+                res = execute(self.broker, trades, markets, betas, cfg, L * size, log.say)
                 executed = True
                 log.say(f"  ausgeführt in {de(res['seconds'])} s: {res['maker']} Maker, {res['taker']} Taker,"
                         f" Gebühren {de(res['fees'], 2)} $" + (f", offen geblieben: {', '.join(res['left'])}" if res["left"] else ""))
@@ -318,15 +500,53 @@ class Bot:
         acct = self.broker.account(markets)
         positions = dict(acct["positions"])
         exposure = {c: q * markets[c]["mid"] for c, q in positions.items() if c in markets}
-        var = model.value_at_risk(exposure, h["rows"])
+        try:
+            var = self.risk_now(snap, exposure, days, view, h["rows"])
+        except Exception as e:
+            log.say(f"VaR und Regime nicht berechnet ({type(e).__name__}: {e})")
+            var = None
         self.hist.add_run(now_ms, acct["equity"], why, len(trades) if executed else 0)
         self.broker.save()
         self.hist.save()
         if self.site:
-            self.publish(now_ms, acct, positions, markets, target, h, why, detail, var, betas, executed, stopped, L,
-                         longs, exposure)
+            self.publish(now_ms, acct, positions, markets, target, h, why, detail, var, betas, executed, stopped,
+                         L * size, longs, exposure)
         return {"t": now_ms, "equity": acct["equity"], "trades": trades, "executed": executed,
                 "risk_before": why["risk_before"], "risk_after": why["risk_after"]}
+
+    def risk_view(self, snap, target, h, days):
+        """Tomorrow's risk of the target book (bot/risk.py): the variance GARCH and the HMM expect from the book's
+        year, against the hedge window's variance (the decision's risk scale) and against the book's usual level
+        (with vol_target the book shrinks while the expected volatility is above it, never grows beyond it)."""
+        rk = self.cfg["risk"]
+        out = risk.book_outlook(snap, target, days)
+        out.update(risk_scale=1.0, size=1.0)
+        if out["days"] < 60 or out["var"] <= 0:
+            out["days"] = 0
+            return out
+        names = [c for c in target if c in h["rows"][0]]
+        window = model.quad([target[c] for c in names], model.covariance(h["rows"], names))
+        if window > 0:
+            out["risk_scale"] = min(4.0, max(0.25, out["var"] / window))
+        if rk.get("vol_target"):
+            out["size"] = min(1.0, max(float(rk["min_scale"]), math.sqrt(out["ref"] / out["var"])))
+        return out
+
+    def risk_now(self, snap, exposure, days, view, rows):
+        """VaR and ES of the book as it stands, with the fat tails of its year at tomorrow's volatility, its usual
+        volatility over the year and over the hedge window, and the regime and size the round worked with."""
+        held = {c: v for c, v in exposure.items() if v and c in snap["coins"]}
+        if not held:
+            return None
+        o = risk.book_outlook(snap, held, days)
+        if o["days"] < 60 or o["var"] <= 0 or not o["tails"]:
+            return None
+        names = [c for c in held if c in rows[0]]
+        window = model.quad([held[c] for c in names], model.covariance(rows, names))
+        out = dict(o["tails"])
+        out.update(regime=o["regime"], ref_sigma=math.sqrt(o["ref"]), window_sigma=math.sqrt(max(window, 0.0)),
+                   garch=o["garch"], days=o["days"], size=view["size"], risk_scale=view["risk_scale"])
+        return out
 
     def publish(self, now_ms, acct, positions, markets, target, h, why, detail, var, betas, executed, stopped, L,
                 longs, exposure):
@@ -342,14 +562,28 @@ class Bot:
                            realized=paper["realized"], fees=paper["fees"], funding=paper["funding"],
                            volume=paper["volume"])
         resid, unhedged = model.residual_vol(h)
-        book = {"L": L, "b_book": h["b_book"], "b_alt": h["b_alt"], "share": h["share"], "h_eth": h["h_eth"],
-                "h_alt": h["h_alt"], "resid": resid, "unhedged": unhedged, "betas": betas,
-                "net_beta": sum(betas.get(c, 1.0) * v for c, v in exposure.items()),
-                "alts": [a for a in cfg["strategy"]["alts"] if a not in longs and a in markets], "rows": len(h["rows"]),
+        jump = h.get("jumps") or {}
+        book = {"L": L, "mode": h["mode"], "b_book": h["b_book"], "b_short": h["b_short"], "H": h["H"], "k": h["k"],
+                "capped": h.get("capped") or {},
+                "jumps": {c: {k: round(v, 4) if isinstance(v, float) else v for k, v in jump[c].items()}
+                          for c in set(target) | set(exposure) if c in jump},
+                "jump_loss": cfg["risk"]["jump_loss"],
+                "resid": resid, "unhedged": unhedged, "betas": betas,
+                "net_beta": sum(betas.get(c, 1.0) * v for c, v in exposure.items()), "rows": len(h["rows"]),
                 "lev": lev, "funding": {c: markets[c]["funding"] * 24 * 365 for c in set(exposure) | set(target)
                                         if c in markets}}
+        if h["mode"] == "fixed":
+            book.update(share=h["share"], b_alt=h["b_alt"], alts=[a for a in h["k"] if a != "ETH"])
+        else:
+            sel = (self.scr or {}).get("hedge") or {}
+            book["hedge"] = {k: sel.get(k) for k in ("t", "weights", "oos", "candidates", "mu", "kept", "resid_vol",
+                                                     "eth_only", "unhedged", "excluded", "days", "settings")}
+            # read by a page opened before the short book existed (it reloads only with the next version)
+            book.update(share=h["k"].get("ETH", 0.0) / h["H"] if h["H"] else 1.0, b_alt=h["b_short"],
+                        alts=[c for c in h["k"] if c != "ETH"])
         decision = {k: why[k] for k in ("risk_before", "risk_after", "benefit", "cost", "gamma", "hold_risk_cost",
-                                        "full_cost", "after_risk_cost", "drift_cost", "opening", "closing")}
+                                        "full_cost", "after_risk_cost", "drift_cost", "opening", "closing",
+                                        "resized")}
         decision.update(t=now_ms, executed=executed, stopped=stopped,
                         by_coin=[dict(r, detail={k: round(v, 3) for k, v in detail.get(r["coin"], {}).items()
                                                  if isinstance(v, (int, float))}) for r in why["by_coin"]])

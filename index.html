@@ -130,6 +130,8 @@ h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .plot .bar.tail { fill: var(--short); opacity: .85; }
 .plot .var { stroke: var(--short); stroke-width: 1.5; }
 .plot .line-r { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot .area-r { fill: var(--accent); opacity: .12; }
+.plot .ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; }
 .plot .line-k { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 4; stroke-linejoin: round; }
 .plot .trade { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
 .tip { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; min-width: 180px; max-width: 260px; padding: 8px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--line); box-shadow: 0 6px 22px rgba(0, 0, 0, .14); font-size: 12.5px; display: grid; gap: 3px; }
@@ -166,7 +168,8 @@ td.token { font-weight: 600; }
 tr.total td { font-weight: 600; border-bottom: 0; }
 tbody tr.group td { padding-top: 14px; font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); border-bottom: 0; }
 .sub-name { display: block; font-family: var(--font-ui); font-weight: 400; font-size: 11.5px; color: var(--muted); }
-.wrap-cell { white-space: normal; min-width: 150px; max-width: 280px; }
+.wrap-cell { white-space: normal; min-width: 130px; max-width: 220px; }
+.dense th, .dense td { padding-left: 6px; padding-right: 6px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 999px; font-family: var(--font-ui); font-size: 12px; font-weight: 600; white-space: nowrap; }
 .chip.buy { color: var(--long); background: var(--long-bg); }
 .chip.sell { color: var(--short); background: var(--short-bg); }
@@ -205,7 +208,7 @@ tbody tr.group td { padding-top: 14px; font-size: 11px; font-weight: 600; letter
 .facts dd { margin: 0; min-width: 0; font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
 
 /* screener */
-.score { display: inline-grid; grid-template-columns: 3.6em 64px; align-items: center; gap: 8px; }
+.score { display: inline-grid; grid-template-columns: 3.6em 48px; align-items: center; gap: 6px; }
 .score .track { position: relative; height: 8px; }
 .score .track::before { content: ""; position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--base); }
 .score .fill { position: absolute; top: 0; height: 8px; border-radius: 2px; }
@@ -224,7 +227,7 @@ footer p { margin: 0; }
     <div>
       <p class="eyebrow" id="eyebrow">Hyperliquid · beta-neutral</p>
       <h1>Long/Short-Bot</h1>
-      <p class="sub" id="sub">Longs aus dem Screener, ETH und ein Alt-Korb short</p>
+      <p class="sub" id="sub">Longs aus dem Screener, Shorts als Hedge aus den liquiden Perps</p>
     </div>
     <div class="status">
       <div class="stamp" id="stamp" role="status"><span class="dot"></span><span id="stampText">Verbinde mit Hyperliquid …</span></div>
@@ -336,18 +339,41 @@ footer p { margin: 0; }
     <p class="foot" id="posFoot"></p>
   </section>
 
+  <section class="card" aria-labelledby="hShort">
+    <div>
+      <h2 id="hShort">Short-Seite</h2>
+      <p class="hint" id="shortHint">Welche Perps den Long-Basket absichern und warum.</p>
+    </div>
+    <dl class="facts" id="shortFacts"></dl>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Token</th><th>Status</th><th class="num">Anteil</th><th class="num">Short je 1 $ Long</th><th class="num">Beta zu ETH</th><th class="num">Korrelation</th><th class="num" id="shortScoreHead" hidden>Short-Score</th><th class="num">Funding p. a.</th></tr></thead>
+        <tbody id="shortBody"><tr><td colspan="8" class="muted">Noch keine Daten.</td></tr></tbody>
+      </table>
+    </div>
+    <p class="hint" id="shortNote"></p>
+  </section>
+
   <div class="lower">
     <section class="card" aria-labelledby="hHedge">
       <h2 id="hHedge">Hedge und Risiko</h2>
       <dl class="facts" id="facts"></dl>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>1 Tag</th><th class="num">VaR historisch</th><th class="num">ES historisch</th><th class="num">VaR normal</th><th class="num">ES normal</th></tr></thead>
+          <thead><tr><th>1 Tag</th><th class="num">VaR Fat Tails</th><th class="num">ES Fat Tails</th><th class="num">VaR normal</th><th class="num">ES normal</th></tr></thead>
           <tbody id="varBody"></tbody>
         </table>
       </div>
+      <figure class="chart" id="regimeBox" hidden>
+        <h3>Wahrscheinlichkeit des unruhigen Regimes, letzte 90 Tage</h3>
+        <div class="plot-wrap">
+          <div class="plot hoverable" id="regimePlot" tabindex="0" role="img" aria-label="Wahrscheinlichkeit des unruhigen Regimes über 90 Tage"></div>
+          <div class="tip" id="regimeTip" hidden></div>
+        </div>
+        <figcaption class="legend" id="regimeLegend"></figcaption>
+      </figure>
       <figure class="chart">
-        <h3>Tagesergebnis des heutigen Buchs, alle 8 Stunden über das Fenster gemessen</h3>
+        <h3>Ein Tag des heutigen Buchs: jeder Tag des letzten Jahres, umgerechnet auf die erwartete Volatilität</h3>
         <div class="plot-wrap">
           <div class="plot hoverable" id="histPlot" tabindex="0" role="img" aria-label="Verteilung der Tagesergebnisse"></div>
           <div class="tip" id="histTip" hidden></div>
@@ -363,10 +389,11 @@ footer p { margin: 0; }
     <section class="card" aria-labelledby="hMethod">
       <h2 id="hMethod">So arbeitet der Bot</h2>
       <div class="explain">
-        <p><b>Longs:</b> Ein Screener wählt einmal am Tag die Token mit den stärksten Protokoll-Cashflows, Momentum und Katalysatoren. Ein gehaltener Long bleibt, solange er knapp hinter den Besten noch mithält.</p>
-        <p><b>Hedge:</b> Die Short-Seite gleicht das Beta des Long-Baskets zu ETH aus, ein fester Anteil in ETH, der Rest gleich verteilt im Alt-Korb.</p>
+        <p><b>Longs:</b> Ein Screener wählt einmal am Tag die Token mit dem besten Mix aus Holder-Rendite, Revenue- und Fee-Rendite, Cashflow-Wachstum und Momentum; wie stark jeder Faktor zählt, kommt aus einem Backtest. Funding und Liquidität sind kein Kaufgrund: Teures Funding verkleinert eine Position, ein zu dünnes Orderbuch schließt einen Token aus. Ein gehaltener Long bleibt, solange er knapp hinter den Besten noch mithält.</p>
+        <p id="methodShorts"><b>Shorts:</b> Mit jedem Screener-Lauf sucht der Bot aus den liquiden Perps die, mit denen der Long-Basket am wenigsten schwankt, beta-neutral zu ETH.</p>
         <p><b>Rebalancing:</b> Nicht nach Uhrzeit. Bei jeder Prüfung vergleicht er die Risikokosten der Abweichung mit den simulierten Handelskosten und handelt nur, was mehr Risiko abbaut, als es kostet.</p>
         <p><b>Ausführung:</b> Zuerst als Maker (Post-Only), was danach offen ist, als IOC mit Preisgrenze. Im Paper-Konto füllt eine Maker-Order erst, wenn der echte Markt durch ihren Preis handelt.</p>
+        <p id="methodRisk"><b>Risiko:</b> Keine Position darf an ihrem schlimmsten eigenen Tag des letzten Jahres mehr als 5 % des Kontos verlieren. GARCH und ein Hidden-Markov-Modell schätzen die Volatilität von morgen; liegt sie über der üblichen, wird das Buch kleiner, und Abweichungen kosten im Rebalancing mehr Risiko.</p>
       </div>
       <dl class="facts" id="configFacts"></dl>
     </section>
@@ -381,12 +408,13 @@ footer p { margin: 0; }
       <div class="sources" id="sources"></div>
     </div>
     <div class="table-wrap">
-      <table>
-        <thead><tr><th class="num">#</th><th>Token</th><th>Status</th><th class="num">Gewicht</th><th>Score</th><th class="num">Fees 30 T</th><th class="num">Fees Δ</th><th class="num">Fee-Rendite</th><th class="num">Momentum</th><th class="num">Funding</th><th class="num">Kosten</th><th>Katalysatoren</th></tr></thead>
+      <table class="dense">
+        <thead><tr><th class="num">#</th><th>Token</th><th>Status</th><th class="num">Gewicht</th><th>Score</th><th class="num">Momentum</th><th class="num">Cashflow Δ</th><th class="num">Holder-Rendite</th><th class="num">Revenue-Rendite</th><th class="num">Funding</th><th class="num">Kosten</th><th>Katalysatoren</th></tr></thead>
         <tbody id="screenBody"><tr><td colspan="12" class="muted">Noch keine Daten.</td></tr></tbody>
       </table>
     </div>
-    <p class="hint">Score: gewichtete Normalscores über alle Kandidaten, 0 ist die Mitte. Fees Δ: letzte 30 Tage gegen die 30 davor. Fee-Rendite: Fees aufs Jahr gerechnet durch Market Cap. Momentum: Rendite gegen ETH mit herausgerechnetem Beta, Mittel aus 30 und 90 Tagen. Funding: was ein Long bekommt (minus: zahlt), aufs Jahr gerechnet, Mittel der letzten 7 Tage. Kosten: simulierter Implementation Shortfall einer Testorder von 2.500 $.</p>
+    <p class="hint" id="screenFactors"></p>
+    <p class="hint" id="screenNote"></p>
   </section>
 
   <footer>
@@ -425,6 +453,7 @@ footer p { margin: 0; }
   const kusd = v => { const a = Math.abs(v); return a >= 1e6 ? num(v / 1e6, 2) + NB + "Mio." + NB + "$" : a >= 1e4 ? num(v / 1e3, 1) + "k" + NB + "$" : usd(v); };
   const pct = (v, d = 0) => num(v * 100, d) + NB + "%";
   const spct = (v, d = 1) => snum(v * 100, d) + NB + "%";
+  const parts = (...xs) => xs.map(x => x.replaceAll(" ", NB)).join(" · ");     // wraps only between the parts
   const bp = (v, d = 1) => num(v, d) + NB + "bp";
   const bpx = v => (v > 0 && v < 0.005) ? "<0,01" + NB + "bp" : bp(v, v >= 10 ? 0 : v >= 1 ? 1 : 2);
   const sig = (v, n) => (v < 0 ? MINUS : "") + new Intl.NumberFormat("de-DE", { maximumSignificantDigits: n }).format(Math.abs(v));
@@ -545,6 +574,7 @@ footer p { margin: 0; }
   const candleHover = hover($("candlePlot"), $("candleTip"));
   const riskHover = hover($("riskPlot"), $("riskTip"));
   const histHover = hover($("histPlot"), $("histTip"));
+  const regimeHover = hover($("regimePlot"), $("regimeTip"));
 
   /* ---------- live values: the published book at live mid prices ---------- */
   const live = c => (mids[c] > 0 ? mids[c] : null);
@@ -572,6 +602,7 @@ footer p { margin: 0; }
       }
       return;
     }
+    if (bot && b.v !== bot.v) { location.reload(); return; }      // the bot runs a newer version: get its page too
     const fresh = !bot || !hist || b.t !== bot.t;
     if (fresh) {
       try { hist = await getJSON("history.json"); } catch (e) { hist = hist || { m1: { t0: null, v: [] }, m15: [], volume: [], events: [], runs: [] }; }
@@ -588,8 +619,68 @@ footer p { margin: 0; }
     renderToday();
     renderCost();
     renderPositions();
+    renderShorts();
     renderHedge();
     renderScreener();
+  }
+
+  /* ---------- the short side ---------- */
+  function renderShorts() {
+    const b = bot.book, k = b.k || {}, sel = b.hedge, set = (sel && sel.settings) || {};
+    const mode = b.mode === "minvar" && sel && sel.weights ? "minvar" : b.mode === "eth" ? "eth" : "fixed";
+    const fixed = mode !== "minvar", cap = set.max_share ?? 0.25, tilt = !fixed && set.tilt_slack > 0;
+    const fact = ([key, v]) => { const d = el("div"); d.append(el("dt", null, key), el("dd", null, v)); return d; };
+    const rows = [];
+    const row = (coin, status, cls, share, info) => {
+      const tr = el("tr"), i = info || {};
+      const fund = i.funding != null ? td(spct(i.funding, 1), "num") : td("–", "num");
+      if (i.cap != null && !fixed && i.cap < cap - 1e-9) fund.appendChild(el("span", "sub-name", `Kappe ${pct(i.cap)}`));
+      const per = td(k[coin] ? num(k[coin], 2) + NB + "$" : "–", "num");
+      if ((b.capped || {})[coin]) per.appendChild(el("span", "sub-name", "Sprunglimit"));
+      tr.append(td(coin, "token"), tdWith(null, chip(cls, status)), td(share != null ? pct(share, 1) : "–", "num"),
+        per, td(i.beta != null ? num(i.beta, 2) : "–", "num"),
+        td(i.corr != null ? num(i.corr, 2) : "–", "num"));
+      if (tilt) tr.append(td(i.score != null ? snum(i.score, 2) : "–", "num"));
+      tr.append(fund);
+      return tr;
+    };
+    $("shortScoreHead").hidden = !tilt;
+    $("methodShorts").replaceChildren(el("b", null, "Shorts:"), " " + (mode === "fixed"
+      ? `Fester Korb: ${pct(b.share ?? 1)} des Long-Betas in ETH, der Rest gleich verteilt auf ${(b.alts || []).join(", ") || "keine Alts"}.`
+      : `Mit jedem Screener-Lauf sucht der Bot aus den liquiden Perps die ${set.min_names ?? 6} bis ${set.max_names ?? 10}, mit denen der Long-Basket am wenigsten schwankt, beta-neutral zu ETH; höchstens ${pct(cap)} in einem Token, weniger bei starkem Schwanken oder teurem Funding. ` +
+        (tilt ? `Ein Short-Score darf die Auswahl zu schwächeren Token verschieben, solange die Absicherung höchstens ${pct(set.tilt_slack)} schlechter wird.`
+              : "Einen Short-Score nutzt er nicht: Im Backtest sicherte die Auswahl damit schlechter ab, und die Shorts brachten das nicht wieder ein.")));
+    if (fixed) {
+      $("shortHint").textContent = mode === "fixed" ? "Fester Korb: ein Anteil des Long-Betas in ETH, der Rest gleich verteilt auf die Alts aus der Konfiguration."
+        : !bot.screener ? "Feste Longs aus der Konfiguration, abgesichert mit ETH allein."
+        : "Gerade nur ETH: Für die heutigen Longs gibt es noch keine Auswahl aus den liquiden Perps. Der Bot versucht es spätestens in zwei Stunden wieder.";
+      $("shortFacts").replaceChildren(...[["Short-Seite je 1 $ Long", parts(`${num(b.H || 0, 2)} $`, "Beta zu ETH 0")], ["Rest-Volatilität p. a.", parts(pct(b.resid), `ungehedged ${pct(b.unhedged)}`)]].map(fact));
+      for (const [coin, ratio] of Object.entries(k).sort((x, y) => y[1] - x[1])) rows.push(row(coin, "Short", "sell", ratio / (b.H || 1), { beta: (b.betas || {})[coin], funding: (b.funding || {})[coin] }));
+      $("shortBody").replaceChildren(...rows);
+      $("shortNote").textContent = "";
+      return;
+    }
+    const oos = sel.oos;
+    const days = sel.days || bot.config.window_days, short = days < bot.config.window_days;
+    $("shortHint").textContent = `Gewählt am ${dmhm(sel.t)}: die Perps, mit denen der Long-Basket über ${days} Tage am wenigsten schwankt, beta-neutral zu ETH.` +
+      (short ? ` Kürzer als die ${bot.config.window_days} Tage aus der Konfiguration, weil nicht alle Longs schon so lange gehandelt werden.` : "") +
+      (sel.kept ? " Die bisherigen Shorts sichern fast so gut ab, sie bleiben." : "") + (sel.mu > 0 ? " Der Short-Score hat die Auswahl zu schwächeren Token verschoben." : "");
+    const facts = [
+      ["Short-Seite je 1 $ Long", parts(`${num(b.H, 2)} $`, "Beta zu ETH 0")],
+      ["Rest-Volatilität p. a.", parts(pct(sel.resid_vol), `nur ETH ${pct(sel.eth_only)}`, `ungehedged ${pct(sel.unhedged)}`)],
+    ];
+    if (oos) facts.push([`Letzte ${oos.days_test} Tage, nicht mitgeschätzt`, parts(pct(oos.hedged), `nur ETH ${pct(oos.eth_only)}`)]);
+    $("shortFacts").replaceChildren(...facts.map(fact));
+    const info = Object.fromEntries((sel.candidates || []).map(x => [x.coin, x]));
+    const held = Object.keys(k).filter(c => k[c] > 0).sort((x, y) => k[y] - k[x]);   // after the jump limits
+    for (const coin of held) rows.push(row(coin, "Short", "sell", k[coin] / (b.H || 1), info[coin] || { beta: (b.betas || {})[coin], funding: (b.funding || {})[coin] }));
+    for (const x of sel.candidates || []) if (!k[x.coin]) rows.push(row(x.coin, "Kandidat", "ok", null, x));
+    $("shortBody").replaceChildren(...rows);
+    $("shortNote").textContent = "Korrelation: mit dem Long-Basket, nach Schrumpfung zu einem Ein-Faktor-Modell." +
+      (tilt ? " Short-Score: die Long-Faktoren umgedreht, schwaches Momentum und schrumpfende Cashflows sprechen für einen Short; ohne Protokolldaten zählt nur das Momentum." : "") +
+      ` Kappe: höchstens ${pct(cap)} der Short-Seite je Token, weniger, wenn er deutlich stärker schwankt als die übrigen Kandidaten (Squeeze-Risiko) oder der Short mehr als ${pct(set.funding_free ?? 0.25)} p. a. Funding zahlt; ab ${pct(set.funding_max ?? 1)} ist er raus. Funding: was der Short bekommt (minus: zahlt).` +
+      (Object.keys(b.capped || {}).some(c => k[c]) ? ` Sprunglimit: Was ein Short wegen seines schlimmsten eigenen Tages nicht tragen darf (höchstens ${pct(b.jump_loss ?? 0.05)} des Kontos Verlust), übernimmt ETH.` : "") +
+      (sel.excluded && sel.excluded.length ? ` Wegen zu dünner Orderbücher ersetzt: ${sel.excluded.join(", ")}.` : "");
   }
   function renderLive() {
     renderHeader();
@@ -604,7 +695,8 @@ footer p { margin: 0; }
     const pos = bot.positions || [];
     const longs = pos.filter(p => p.sz > 0).length, shorts = pos.filter(p => p.sz < 0).length;
     $("eyebrow").textContent = `Hyperliquid · ${MODE[bot.mode] || bot.mode} · beta-neutral`;
-    $("sub").textContent = `${longs} Longs aus dem Screener, ${shorts} Shorts als Hedge in ETH und einem Alt-Korb`;
+    const how = { minvar: "aus den liquiden Perps", eth: "in ETH" }[bot.book && bot.book.mode] || "in ETH und einem Alt-Korb";
+    $("sub").textContent = `${longs} Longs aus dem Screener, ${shorts} Shorts als Hedge ${how}`;
     $("paperNote").hidden = bot.mode !== "paper";
     const liveOn = lastMsg > 0 && Date.now() - lastMsg < 15000;
     $("stamp").classList.toggle("live", liveOn);
@@ -628,7 +720,8 @@ footer p { margin: 0; }
     if (base != null) setTile("tDay", susd(eq - base), `${a.since >= mid ? "seit dem Start" : "seit Mitternacht"}, ${spct(eq / base - 1, 2)}`, eq - base >= 0.5 ? "up" : eq - base <= -0.5 ? "down" : "");
     const pos = livePositions(), betas = bot.book.betas || {};
     const L = pos.filter(p => p.valueLive > 0).reduce((s, p) => s + p.valueLive, 0), S = -pos.filter(p => p.valueLive < 0).reduce((s, p) => s + p.valueLive, 0);
-    setTile("tBook", `${kusd(L).replace(NB + "$", "")} / ${kusd(S)}`, `Ziel Long-Book ${kusd(bot.book.L)}, ${num(bot.config.book_per_side, 1)} × Konto`);
+    const size = bot.risk && bot.risk.size != null ? bot.risk.size : 1;
+    setTile("tBook", `${kusd(L).replace(NB + "$", "")} / ${kusd(S)}`, `Ziel Long-Book ${kusd(bot.book.L)}, ${num(bot.book.L / Math.max(1, a.equity), 2)} × Konto` + (size < 0.995 ? ` (${pct(size)} wegen Volatilität)` : ""));
     const net = pos.reduce((s, p) => s + (betas[p.coin] ?? 1) * p.valueLive, 0);
     const longBeta = pos.filter(p => p.valueLive > 0).reduce((s, p) => s + (betas[p.coin] ?? 1) * p.valueLive, 0);
     setTile("tBeta", susd(net), `${pct(Math.abs(net) / Math.max(1, longBeta), 1)} des Long-Betas offen`);
@@ -768,9 +861,13 @@ footer p { margin: 0; }
     const kinds = [...new Set(e.trades.map(t => t.kind))];
     const [label, cls] = kinds.length === 1 ? KIND[kinds[0]] : KIND.mixed;
     let why;
+    const resized = e.resized || [];
     if (e.opening.length || e.closing.length) {
       why = [e.opening.length ? `${e.opening.length} eröffnet` : "", e.closing.length ? `${e.closing.length} geschlossen` : ""].filter(Boolean).join(", ");
       why += e.opening.length && !e.closing.length && e.opening.length === e.trades.length ? ": neue Auswahl des Screeners oder Start" : ": die Auswahl des Screeners hat sich geändert";
+      if (resized.length) why += `; ${resized.length} auf Sprunglimit oder Buchgröße gebracht`;
+    } else if (resized.length) {
+      why = `${resized.length} auf Sprunglimit oder Buchgröße gebracht: eine Position lag über ihrem Sprunglimit, oder das Buch war mehr als ${pct(((bot.config || {}).risk || {}).size_band ?? 0.1)} neben seiner Zielgröße`;
     } else {
       why = `Risikokosten ${usdx(e.hold_risk_cost)} pro Tag, Trade spart ${usdx(e.benefit)} und kostet ${usdx(e.cost)} · Abweichung 1σ ${usd(e.risk_before)} → ${usd(e.risk_after)} pro Tag`;
     }
@@ -834,7 +931,8 @@ footer p { margin: 0; }
     } else {
       decide.append("Es gab keine Abweichung, die etwas kostet.");
     }
-    if (d.opening.length || d.closing.length) decide.append(` Dazu ${d.opening.length} Eröffnungen und ${d.closing.length} Schließungen: Die führt er immer ganz aus, sie sind eine Entscheidung der Strategie, keine Abweichung.`);
+    const rs = d.resized || [];
+    if (d.opening.length || d.closing.length || rs.length) decide.append(` Dazu ${[d.opening.length ? `${d.opening.length} Eröffnungen` : "", d.closing.length ? `${d.closing.length} Schließungen` : "", rs.length ? `${rs.length} Anpassungen an Sprunglimit oder Buchgröße` : ""].filter(Boolean).join(", ")}: Die führt er immer ganz aus, sie sind eine Entscheidung der Strategie oder des Risikos, keine Abweichung.`);
     ex.appendChild(decide);
 
     drawFrontier(R0, K, Rb, Cb);
@@ -844,7 +942,7 @@ footer p { margin: 0; }
     for (const r of rows) {
       const det = r.detail || {}, tr = el("tr");
       const devCell = r.forced
-        ? tdWith("num", chip(d.closing.includes(r.coin) ? "warn" : "acc", d.closing.includes(r.coin) ? "schließen" : "eröffnen"))
+        ? tdWith("num", chip(d.closing.includes(r.coin) ? "warn" : "acc", d.closing.includes(r.coin) ? "schließen" : (d.resized || []).includes(r.coin) ? "anpassen" : "eröffnen"))
         : td(susd(r.deviation), "num");
       const costCell = tdWith("num", bpx(r.rate * 1e4));
       if (det.spread != null) costCell.appendChild(el("span", "sub-name", `Taker: Spread ${num(det.spread, 1)} · Impact ${num(det.impact, 1)}`));
@@ -950,10 +1048,12 @@ footer p { margin: 0; }
         const side = tdWith(null, el("span", r.sz > 0 ? "side-long" : r.sz < 0 ? "side-short" : "muted", r.sz > 0 ? "Long" : r.sz < 0 ? "Short" : "–"));
         const pnl = r.upnlLive;
         const fr = fund[r.coin], earn = fr != null && r.sz ? -Math.sign(r.sz) * fr : null;
+        const goal = td(r.target ? usd(r.target) : "schließen", "num");
+        if ((bot.book.capped || {})[r.coin]) goal.appendChild(el("span", "sub-name", "Sprunglimit"));
         tr.append(td(r.coin, "token"), side, td(r.sz ? sig(r.sz, 6) : "0", "num"), td(r.avg != null ? sig(r.avg, 5) : "–", "num"),
           td(r.markLive ? sig(r.markLive, 5) : "–", "num"), td(r.markLive != null ? usd(r.valueLive) : "–", "num"),
           td(pnl != null ? susd(pnl, 2) : "–", "num" + (pnl > 0.005 ? " up" : pnl < -0.005 ? " down" : "")),
-          td(r.target ? usd(r.target) : "schließen", "num"), td(r.target && r.sz ? susd(r.valueLive - r.target) : r.sz ? "ganz" : "neu", "num"),
+          goal, td(r.target && r.sz ? susd(r.valueLive - r.target) : r.sz ? "ganz" : "neu", "num"),
           td(lev[r.coin] ? lev[r.coin] + "×" : "–", "num"), td(earn != null ? spct(earn, 1) : "–", "num"));
         out.push(tr);
         total += r.valueLive;
@@ -979,23 +1079,40 @@ footer p { margin: 0; }
     const b = bot.book, r = bot.risk, eq = bot.account.equity, c = bot.config;
     const facts = [
       ["Beta Long-Basket zu ETH", num(b.b_book, 2)],
-      ["Beta Alt-Korb zu ETH", num(b.b_alt, 2)],
-      ["Hedge in ETH / Alt-Korb", `${pct(b.share)} / ${pct(1 - b.share)}`],
+      ["Beta Short-Seite zu ETH", b.b_short != null ? num(b.b_short, 2) : "–"],
       ["Rest-Volatilität p. a.", `${pct(b.resid)} statt ${pct(b.unhedged)} ungehedged`],
       ["Gemessen über", `${c.window_days} Tage, alle 8 Stunden`],
-      ["Alt-Korb", b.alts.join(", ")],
     ];
+    if (b.mode === "fixed" && b.share != null) facts.splice(2, 0, ["Hedge in ETH / Alt-Korb", `${pct(b.share)} / ${pct(1 - b.share)}`]);
+    if (r && r.ref_sigma) {
+      facts.push(["Volatilität am Tag", parts(`morgen ${usd(r.sigma)}`, `im Jahr ${usd(r.ref_sigma)}`) +
+        (r.window_sigma ? " · " + parts(`${c.window_days} Tage ${usd(r.window_sigma)}`) : "")]);
+      if (r.regime) {
+        const p = r.regime.turbulent;
+        facts.push(["Regime", parts(p > 0.5 ? "unruhig" : "ruhig", `Wahrscheinlichkeit ${pct(Math.max(p, 1 - p))}`)]);
+      }
+      facts.push(["Buchgröße", r.size < 0.995 ? parts(pct(r.size), "Volatilität über der üblichen") : "voll"]);
+    }
     $("facts").replaceChildren(...facts.map(([k, v]) => { const d = el("div"); d.append(el("dt", null, k), el("dd", null, v)); return d; }));
+    drawRegime(r);
+    const rk = c.risk || {};
+    $("methodRisk").replaceChildren(el("b", null, "Risiko:"), ` Keine Position darf an ihrem schlimmsten eigenen Tag des letzten Jahres (über das hinaus, was ETH erklärt) mehr als ${pct(rk.jump_loss ?? 0.05)} des Kontos verlieren: Ein Long darüber gibt den Rest an die anderen Longs, ein Short sein Beta an ETH, und eine Position über ihrem Limit handelt er sofort zurück. GARCH und ein Hidden-Markov-Modell schätzen die Volatilität von morgen. ` +
+      (rk.vol_target === false ? "" : `Liegt sie über der üblichen, wird das Buch kleiner, bis auf ${pct(rk.min_scale ?? 0.5)}, nie größer; sobald es mehr als ${pct(rk.size_band ?? 0.1)} neben seiner Zielgröße liegt, bringt er es als Ganzes dorthin. `) +
+      "Im Rebalancing kostet eine Abweichung entsprechend mehr oder weniger Risiko; in unruhigen Zeiten handelt er also früher zurück.");
     if (r) {
       $("varBody").replaceChildren(...["95", "99"].map(lvl => {
         const x = r[lvl], tr = el("tr");
         tr.append(td(lvl + NB + "%"), td(MINUS + usd(x.hist), "num"), td(MINUS + usd(x.es_hist), "num"), td(MINUS + usd(x.param), "num"), td(MINUS + usd(x.es_param), "num"));
         return tr;
       }));
-      $("varHint").textContent = `VaR: Verlust, der an 95 bzw. 99 von 100 Tagen nicht überschritten wird. ES: mittlerer Verlust an den Tagen jenseits davon. Historisch: die Tagesrenditen der letzten ${bot.config.window_days} Tage, alle 8 Stunden gemessen (${r.n} Werte, sie überlappen sich), auf das heutige Buch angewendet. Normal: aus der Kovarianz, 1σ = ${usd(r.sigma)} pro Tag (${pct(r.sigma / eq, 1)} des Kontos).`;
+      $("varHint").textContent = r.ref_sigma
+        ? `VaR: Verlust, der an 95 bzw. 99 von 100 Tagen nicht überschritten wird. ES: mittlerer Verlust an den Tagen jenseits davon. Mit Fat Tails: jeder der letzten ${r.n} Tage mit dem heutigen Buch gerechnet, durch seine damalige Volatilität geteilt und mit der von morgen malgenommen (gefilterte historische Simulation). Normal: dieselbe Volatilität, 1σ = ${usd(r.sigma)} am Tag (${pct(r.sigma / eq, 1)} des Kontos), mit Normalverteilung. Die Volatilität von morgen ist der Mittelwert aus GARCH(1,1) und dem Hidden-Markov-Modell; beide sagten das Risiko im Backtest besser voraus als das ${c.window_days}-Tage-Fenster.`
+        : `VaR: Verlust, der an 95 bzw. 99 von 100 Tagen nicht überschritten wird. ES: mittlerer Verlust an den Tagen jenseits davon. 1σ = ${usd(r.sigma)} pro Tag (${pct(r.sigma / eq, 1)} des Kontos).`;
       drawHist(r);
     } else {
       $("varBody").replaceChildren();
+      $("histPlot").replaceChildren();
+      histHover.clear();
       $("varHint").textContent = "Ohne offenes Buch gibt es kein Risiko zu messen.";
     }
     const cfg = [
@@ -1007,6 +1124,28 @@ footer p { margin: 0; }
       ["Erwarteter Taker-Anteil", pct(c.taker_share)],
     ];
     $("configFacts").replaceChildren(...cfg.map(([k, v]) => { const d = el("div"); d.append(el("dt", null, k), el("dd", null, v)); return d; }));
+  }
+  function drawRegime(r) {
+    const plot = $("regimePlot"), g = r && r.regime, ys = g && g.recent;
+    $("regimeBox").hidden = !(ys && ys.length > 5);
+    if ($("regimeBox").hidden) { regimeHover.clear(); return; }
+    const W = Math.max(280, Math.floor(plot.clientWidth || 480)), H = 140, M = { l: 40, r: 10, t: 12, b: 24 };
+    const pw = W - M.l - M.r, ph = H - M.t - M.b, n = ys.length, end = bot.t;
+    const X = i => M.l + i / (n - 1) * pw, Y = p => M.t + (1 - p) * ph, at = i => end - (n - 1 - i) * DAY;
+    let s = svgOpen(W, H);
+    for (const p of [0, 0.5, 1]) {
+      s += `<line class="${p === 0.5 ? "ref" : p === 0 ? "axis" : "grid"}" x1="${M.l}" x2="${W - M.r}" y1="${f1(Y(p))}" y2="${f1(Y(p))}"/>`;
+      s += `<text x="${M.l - 6}" y="${f1(Y(p) + 4)}" text-anchor="end">${num(p * 100)}${NB}%</text>`;
+    }
+    const step = Math.max(1, Math.ceil((n - 1) / (W < 420 ? 3 : 5)));
+    for (let i = n - 1; i >= 0; i -= step) s += `<text x="${f1(X(i))}" y="${H - 6}" text-anchor="${i === n - 1 ? "end" : i - step < 0 ? "start" : "middle"}">${dm(at(i))}</text>`;
+    const line = ys.map((p, i) => `${i ? "L" : "M"}${f1(X(i))},${f1(Y(p))}`).join("");
+    s += `<path class="area-r" d="${line}L${f1(X(n - 1))},${f1(Y(0))}L${f1(X(0))},${f1(Y(0))}Z"/><path class="line-r" d="${line}"/>`;
+    s += `<g class="hover" visibility="hidden"><line class="cross" x1="0" x2="0" y1="${M.t}" y2="${M.t + ph}"/></g></svg>`;
+    plot.innerHTML = s;
+    regimeHover.set(ys.map((_, i) => X(i)), i => [dmy(at(i)), [["Unruhig", pct(ys[i])], ["Ruhig", pct(1 - ys[i])]]], M.t);
+    const [calm, wild] = g.sd;
+    $("regimeLegend").replaceChildren(el("span", null, `Ruhig: 1σ ≈ ${usd(calm)} am Tag · unruhig: ≈ ${usd(wild)} · ab 50 % zählt der Tag als unruhig. Ein Regime hält im Mittel ${num(1 / Math.max(1e-9, 1 - g.stay[0]), 0)} bzw. ${num(1 / Math.max(1e-9, 1 - g.stay[1]), 0)} Tage.`));
   }
   function drawHist(r) {
     const plot = $("histPlot"), xs = r.samples;
@@ -1072,12 +1211,25 @@ footer p { margin: 0; }
         list.appendChild(line);
       }
       if (!list.children.length) list.appendChild(el("span", "muted", "–"));
+      const hold = td(f.holder_yield != null ? pct(f.holder_yield, 1) : "–", "num");
+      if (c.holder_extra) hold.appendChild(el("span", "sub-name", "mit Rückkäufen"));
+      const fund = td(c.funding != null ? spct(-c.funding, 1) : "–", "num");
+      if (c.funding_mult != null && c.funding_mult < 1) fund.appendChild(el("span", "sub-name", c.funding_mult > 0 ? `Gewicht × ${num(c.funding_mult, 2)}` : "zu teuer"));
       tr.append(td(c.rank ?? "–", "num"), tok, st, td(weights[c.coin] ? pct(weights[c.coin], 1) : "–", "num"), tdWith(null, box),
-        td(c.fees30 != null ? mio(c.fees30) : "–", "num"), td(f.fee_growth != null ? spct(Math.expm1(f.fee_growth), 0) : "–", "num"),
-        td(f.fee_yield != null ? pct(f.fee_yield, 1) : "–", "num"), td(f.momentum != null ? spct(Math.expm1(f.momentum), 0) : "–", "num"),
-        td(c.funding != null ? spct(-c.funding, 1) : "–", "num"), td(c.cost_bps != null ? bp(c.cost_bps) : "–", "num"), tdWith("wrap-cell", list));
+        td(f.momentum != null ? spct(Math.expm1(f.momentum), 0) : "–", "num"),
+        td(f.cashflow_growth != null ? spct(Math.expm1(f.cashflow_growth), 0) : "–", "num"), hold,
+        td(f.revenue_yield != null ? pct(f.revenue_yield, 1) : "–", "num"), fund,
+        td(c.cost_bps != null ? bp(c.cost_bps) : "–", "num"), tdWith("wrap-cell", list));
       return tr;
     }));
+    const LABEL = { momentum: "Momentum", holder_yield: "Holder-Rendite", cashflow_growth: "Cashflow-Wachstum", revenue_yield: "Revenue-Rendite",
+                    catalysts: "Katalysatoren", fee_yield: "Fee-Rendite", volume_growth: "Volumen-Wachstum", acceleration: "Beschleunigung" };
+    const fw = Object.entries(sc.factor_weights || {}).filter(([key, v]) => LABEL[key] && v > 0).sort((x, y) => y[1] - x[1]);
+    $("screenFactors").textContent = fw.length ? "Gewichte im Score: " + fw.map(([key, v]) => `${LABEL[key]} ${pct(v)}`).join(", ") + "." : "";
+    const lim = sc.limits || {};
+    $("screenNote").textContent = "Score: gewichtete Normalscores über alle Kandidaten, 0 ist die Mitte. Momentum: Rendite gegen ETH mit herausgerechnetem Beta, Mittel aus 30 und 90 Tagen. Cashflow Δ: Fees und Revenue der letzten 30 Tage gegen die 30 davor. Holder- und Revenue-Rendite: was an Tokenholder fließt bzw. beim Protokoll bleibt, aufs Jahr gerechnet durch Market Cap. " +
+      `Funding: was ein Long bekommt (minus: zahlt), Mittel der letzten 7 Tage; ab ${pct(lim.funding_free ?? 0.25)} p. a. Kosten schrumpft das Gewicht, ab ${pct(lim.funding_max ?? 1)} fällt der Token raus. ` +
+      `Kosten: simulierter Implementation Shortfall einer Testorder von ${usd(lim.test_order_usd ?? 2500)}, über ${bp(lim.max_cost_bps ?? 25, 0)} bleibt ein Token draußen.`;
   }
 
   /* ---------- live prices: WebSocket, REST as the fallback ---------- */
