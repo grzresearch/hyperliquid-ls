@@ -84,6 +84,22 @@ def signed(x, d=0):
     return ("+" if x >= 0 else "−") + de(abs(x), d)
 
 
+def slim(view):
+    """The risk view as the page needs it: dollars to cents, probabilities to four places, and without the filtered
+    probabilities of the whole year (the page shows its last 90 days, "recent")."""
+    cents = lambda v: [round(x, 2) if x is not None else None for x in v]      # noqa: E731
+    out = dict(view, samples=cents(view["samples"]), pnl=cents(view.get("pnl") or []))
+    if view.get("regime"):
+        reg = {k: v for k, v in view["regime"].items() if k != "filtered"}
+        out["regime"] = dict(reg, **{k: [round(p, 4) for p in reg[k]] for k in ("pred", "smoothed") if k in reg})
+    if view.get("smile"):
+        sm = view["smile"]
+        out["smile"] = dict(sm, phases={name: {"start": round(ph["start"], 2), "sd": cents(ph["sd"]),
+                                               "iv": [cents(row) for row in ph["iv"]]}
+                                        for name, ph in sm["phases"].items()})
+    return out
+
+
 class Log:
     def __init__(self, folder):
         self.folder = folder
@@ -534,7 +550,9 @@ class Bot:
 
     def risk_now(self, snap, exposure, days, view, rows):
         """VaR and ES of the book as it stands, with the fat tails of its year at tomorrow's volatility, its usual
-        volatility over the year and over the hedge window, and the regime and size the round worked with."""
+        volatility over the year and over the hedge window, and the regime and size the round worked with. For the
+        page also the year's daily PnL of the book, the regime of every day and the volatility smile the model
+        implies (bot/risk.py)."""
         held = {c: v for c, v in exposure.items() if v and c in snap["coins"]}
         if not held:
             return None
@@ -543,10 +561,16 @@ class Bot:
             return None
         names = [c for c in held if c in rows[0]]
         window = model.quad([held[c] for c in names], model.covariance(rows, names))
+        try:
+            smile = risk.book_smile(o)
+        except Exception as e:      # a picture must not cost the VaR
+            self.log.say(f"Volatilitäts-Smile nicht berechnet ({type(e).__name__}: {e})")
+            smile = None
         out = dict(o["tails"])
         out.update(regime=o["regime"], ref_sigma=math.sqrt(o["ref"]), window_sigma=math.sqrt(max(window, 0.0)),
-                   garch=o["garch"], days=o["days"], size=view["size"], risk_scale=view["risk_scale"])
-        return out
+                   garch=o["garch"], days=o["days"], size=view["size"], risk_scale=view["risk_scale"],
+                   pnl=o.get("pnl") or [], ages=o.get("ages"), t_end=o.get("t_end"), smile=smile)
+        return slim(out)
 
     def publish(self, now_ms, acct, positions, markets, target, h, why, detail, var, betas, executed, stopped, L,
                 longs, exposure):

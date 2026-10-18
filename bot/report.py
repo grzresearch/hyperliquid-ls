@@ -161,7 +161,7 @@ def site_payload(now_ms, mode, cfg, acct, paper, positions, marks, target, h, de
                      "upnl": q * (mark - pos["avg"]) if pos and mark else None,
                      "target": target.get(coin, 0.0), "weight": weights.get(coin),
                      "score": longs_score.get(coin), "beta": book["betas"].get(coin)})
-    return {"v": 3, "t": now_ms, "mode": mode, "interval_min": cfg["rebalancing"].get("check_minutes", 15),
+    return {"v": 4, "t": now_ms, "mode": mode, "interval_min": cfg["rebalancing"].get("check_minutes", 15),
             "account": acct, "positions": rows, "book": book, "decision": decision, "risk": var,
             "screener": screener,
             "config": {"risk_aversion": cfg["rebalancing"]["risk_aversion"],

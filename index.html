@@ -35,6 +35,9 @@
   --short-bg: #F7E3E0;
   --warn: #8A5A00;
   --warn-bg: #FAEFD6;
+  /* risk model: horizons as one ordinal ramp (1 day strongest), regimes as a diverging pair around a neutral */
+  --h1: #25399F; --h2: #4F65D0; --h3: #7F90E1;
+  --calm: #4A74D0; --mid: #C9CEC9; --wild: #DE7A2A;
   --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
   --font-ui: "Instrument Sans", "Segoe UI", system-ui, -apple-system, sans-serif;
   --font-num: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -45,6 +48,7 @@
     --bg: #0F1311; --panel: #161B19; --ink: #E4EAE6; --ink-2: #AAB6B0; --muted: #808C86; --line: #27312D; --base: #3E4A45;
     --accent: #93A4FF; --accent-bg: #1E2550;
     --long: #52C98F; --long-bg: #12301F; --short: #F2806F; --short-bg: #3B1914; --warn: #F1B84E; --warn-bg: #3A2C0F;
+    --h1: #93A4FF; --h2: #7586DC; --h3: #5868B6; --calm: #6286E0; --mid: #59615D; --wild: #CF7E37;
     color-scheme: dark;
   }
 }
@@ -52,6 +56,7 @@
   --bg: #0F1311; --panel: #161B19; --ink: #E4EAE6; --ink-2: #AAB6B0; --muted: #808C86; --line: #27312D; --base: #3E4A45;
   --accent: #93A4FF; --accent-bg: #1E2550;
   --long: #52C98F; --long-bg: #12301F; --short: #F2806F; --short-bg: #3B1914; --warn: #F1B84E; --warn-bg: #3A2C0F;
+  --h1: #93A4FF; --h2: #7586DC; --h3: #5868B6; --calm: #6286E0; --mid: #59615D; --wild: #CF7E37;
   color-scheme: dark;
 }
 *, *::before, *::after { box-sizing: border-box; }
@@ -99,6 +104,7 @@ h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .seg { display: inline-flex; flex-wrap: wrap; padding: 3px; gap: 2px; border: 1px solid var(--line); border-radius: 999px; background: var(--bg); }
 .seg button { font: inherit; font-family: var(--font-num); font-size: 12.5px; font-weight: 600; color: var(--ink-2); background: transparent; border: 0; border-radius: 999px; padding: 5px 11px; cursor: pointer; white-space: nowrap; }
 .seg button[aria-pressed="true"] { background: var(--panel); color: var(--ink); box-shadow: 0 0 0 1px var(--line); }
+.seg button:disabled { opacity: .4; cursor: default; }
 .seg button:focus-visible, .plot:focus-visible, summary:focus-visible, a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .empty { margin: 0; padding: 14px; border: 1px dashed var(--line); border-radius: 8px; color: var(--ink-2); }
 
@@ -126,11 +132,19 @@ h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .plot .pt-full { fill: var(--muted); }
 .plot .pt-bot { fill: var(--accent); }
 .plot .ring { fill: none; stroke: var(--accent); stroke-width: 2; }
-.plot .bar { fill: var(--base); }
-.plot .bar.tail { fill: var(--short); opacity: .85; }
 .plot .var { stroke: var(--short); stroke-width: 1.5; }
-.plot .line-r { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
-.plot .area-r { fill: var(--accent); opacity: .12; }
+.plot .line-r { fill: none; stroke: var(--wild); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot .area-r { fill: var(--wild); opacity: .12; }
+.plot .dens { fill: none; stroke: var(--h1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot .dens-area { fill: var(--h1); opacity: .1; }
+.plot .norm { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 4; }
+.plot .var-n { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 2 3; }
+.plot .rug { stroke: var(--ink-2); stroke-width: 1; opacity: .45; }
+.plot .rug.loss { stroke: var(--short); opacity: .9; }
+.plot .hz { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.plot .hz1 { stroke: var(--h1); }
+.plot .hz2 { stroke: var(--h2); }
+.plot .hz3 { stroke: var(--h3); }
 .plot .ref { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 3 4; }
 .plot .line-k { fill: none; stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 4; stroke-linejoin: round; }
 .plot .trade { fill: var(--accent); stroke: var(--panel); stroke-width: 2; }
@@ -144,7 +158,6 @@ h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .key.hollow { border: 1.5px solid var(--long); background: var(--panel); }
 .key.fill-down { background: var(--short); }
 .key.vol { background: var(--accent); opacity: .55; }
-.key.tail { background: var(--short); opacity: .85; }
 .key.line { width: 16px; height: 2px; border-radius: 2px; background: var(--muted); }
 .key.line.acc { background: var(--accent); }
 .key.dash { width: 16px; height: 0; border-radius: 0; border-top: 2px dashed var(--muted); }
@@ -152,6 +165,16 @@ h3 { margin: 0; font-size: 13.5px; font-weight: 600; }
 .key.dot { width: 10px; height: 10px; border-radius: 50%; }
 .key.dot.hold { background: var(--short); }
 .key.dot.bot { background: var(--accent); }
+.key.dot.ink { width: 7px; height: 7px; background: var(--ink); box-shadow: 0 0 0 1.5px var(--panel); }
+.key.dot.ink.small { width: 3px; height: 3px; opacity: .55; box-shadow: none; }
+.key.line.h1 { background: var(--h1); }
+.key.line.h2 { background: var(--h2); }
+.key.line.h3 { background: var(--h3); }
+.key.line.ink { height: 1px; background: var(--ink); opacity: .5; }
+.key.rug { width: 2px; height: 10px; border-radius: 0; background: var(--ink-2); opacity: .6; }
+.key.rug.loss { background: var(--short); opacity: .9; }
+.key.ramp { width: 72px; height: 10px; border-radius: 3px; background: linear-gradient(90deg, var(--calm), var(--mid), var(--wild)); }
+.key.var { width: 16px; height: 2px; border-radius: 2px; background: var(--short); }
 details.more { border-top: 1px solid var(--line); padding-top: 10px; }
 details.more summary { cursor: pointer; font-weight: 600; font-size: 13.5px; width: fit-content; }
 details.more[open] summary { margin-bottom: 10px; }
@@ -206,6 +229,21 @@ tbody tr.group td { padding-top: 14px; font-size: 11px; font-weight: 600; letter
 .facts div { display: flex; justify-content: space-between; gap: 16px; padding: 7px 0; border-bottom: 1px solid var(--line); }
 .facts dt { color: var(--ink-2); flex: none; max-width: 60%; }
 .facts dd { margin: 0; min-width: 0; font-family: var(--font-num); font-variant-numeric: tabular-nums; text-align: right; }
+
+/* risk model: distribution, smile, regime surface */
+.model { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 22px; align-items: start; }
+@media (max-width: 880px) { .model { grid-template-columns: minmax(0, 1fr); } }
+.fig-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 12px; min-height: 30px; }
+.surf { display: block; width: 100%; height: 360px; border-radius: 6px; touch-action: pan-y; cursor: grab; -webkit-user-select: none; user-select: none; }
+.surf.dragging { cursor: grabbing; }
+.surf:focus { outline: none; }
+.surf:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.note { margin: 0; color: var(--ink-2); font-size: 13px; max-width: 76ch; }
+.note b { color: var(--ink); font-weight: 600; }
+.tables { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 22px; align-items: start; }
+@media (max-width: 880px) { .tables { grid-template-columns: minmax(0, 1fr); } }
+.tables h3 { margin-bottom: 6px; }
+.tables > .wide { grid-column: 1 / -1; }
 
 /* screener */
 .score { display: inline-grid; grid-template-columns: 3.6em 48px; align-items: center; gap: 6px; }
@@ -372,17 +410,6 @@ footer p { margin: 0; }
         </div>
         <figcaption class="legend" id="regimeLegend"></figcaption>
       </figure>
-      <figure class="chart">
-        <h3>Ein Tag des heutigen Buchs: jeder Tag des letzten Jahres, umgerechnet auf die erwartete Volatilität</h3>
-        <div class="plot-wrap">
-          <div class="plot hoverable" id="histPlot" tabindex="0" role="img" aria-label="Verteilung der Tagesergebnisse"></div>
-          <div class="tip" id="histTip" hidden></div>
-        </div>
-        <figcaption class="legend">
-          <span><i class="key" style="background: var(--base)"></i>Messungen je Ergebnis in $</span>
-          <span><i class="key tail"></i>schlechter als VaR 95 %</span>
-        </figcaption>
-      </figure>
       <p class="hint" id="varHint"></p>
     </section>
 
@@ -398,6 +425,79 @@ footer p { margin: 0; }
       <dl class="facts" id="configFacts"></dl>
     </section>
   </div>
+
+  <section class="card" aria-labelledby="hModel" id="modelCard" hidden>
+    <div>
+      <h2 id="hModel">Risikomodell</h2>
+      <p class="hint" id="modelHint">Wie die Modelle das heutige Buch sehen: jeder Tag des letzten Jahres, mit den Positionen von heute gerechnet.</p>
+    </div>
+    <div class="model">
+      <figure class="chart" id="distBox">
+        <div class="fig-head">
+          <h3>Verteilung eines Tages</h3>
+          <div class="seg" id="distScale" role="group" aria-label="Skala der Häufigkeit">
+            <button type="button" data-scale="log" aria-pressed="true">log</button>
+            <button type="button" data-scale="lin" aria-pressed="false">linear</button>
+          </div>
+        </div>
+        <div class="plot-wrap">
+          <div class="plot hoverable" id="distPlot" tabindex="0" role="img" aria-label="Verteilung des Tagesergebnisses mit Fat Tails gegen die Normalverteilung"></div>
+          <div class="tip" id="distTip" hidden></div>
+        </div>
+        <figcaption class="legend" id="distLegend"></figcaption>
+        <p class="note" id="distNote"></p>
+      </figure>
+      <figure class="chart" id="smileBox">
+        <div class="fig-head">
+          <h3>Volatilitäts-Smile aus GARCH</h3>
+          <div class="seg" id="smilePhase" role="group" aria-label="Volatilitätsphase">
+            <button type="button" data-phase="today" aria-pressed="true">heute</button>
+            <button type="button" data-phase="calm" aria-pressed="false">ruhig</button>
+            <button type="button" data-phase="turbulent" aria-pressed="false">unruhig</button>
+          </div>
+        </div>
+        <div class="plot-wrap">
+          <div class="plot hoverable" id="smilePlot" tabindex="0" role="img" aria-label="Implizite Volatilität je Strike für einen Tag, eine Woche und einen Monat"></div>
+          <div class="tip" id="smileTip" hidden></div>
+        </div>
+        <figcaption class="legend" id="smileLegend"></figcaption>
+        <p class="note" id="smileNote"></p>
+      </figure>
+    </div>
+    <figure class="chart" id="surfBox">
+      <div class="fig-head">
+        <h3>Regime-Fläche aus dem Hidden-Markov-Modell</h3>
+        <div class="seg" id="surfView" role="group" aria-label="Blickwinkel">
+          <button type="button" data-view="tilt" aria-pressed="true">schräg</button>
+          <button type="button" data-view="front" aria-pressed="false">von vorn</button>
+          <button type="button" data-view="top" aria-pressed="false">von oben</button>
+        </div>
+      </div>
+      <div class="plot-wrap">
+        <canvas class="surf" id="surfCanvas" tabindex="0" role="img" aria-label="Dreidimensionale Fläche über das letzte Jahr: die Verteilung eines Tages je nach Regime, gefärbt nach der Wahrscheinlichkeit des unruhigen Regimes im Rückblick, vorne morgen. Pfeil links und rechts drehen, Pfeil hoch und runter wählen einen Tag."></canvas>
+        <div class="tip" id="surfTip" role="status" aria-live="polite" hidden></div>
+      </div>
+      <figcaption class="legend" id="surfLegend"></figcaption>
+      <p class="note" id="surfNote"></p>
+    </figure>
+    <details class="more" id="modelTables">
+      <summary>Die Zahlen als Tabellen</summary>
+      <div class="tables">
+        <div id="tailBlock">
+          <h3>Ränder der Verteilung</h3>
+          <div class="table-wrap"><table class="dense"><thead><tr><th>Tage</th><th class="num">letztes Jahr</th><th class="num">normal</th><th class="num">Faktor</th></tr></thead><tbody id="tailBody"></tbody></table></div>
+        </div>
+        <div id="smileBlock">
+          <h3 id="smileTableHead">Smile, $ am Tag</h3>
+          <div class="table-wrap"><table class="dense"><thead id="smileHead"></thead><tbody id="smileBody"></tbody></table></div>
+        </div>
+        <div class="wide" id="monthBlock">
+          <h3>Regime je Monat</h3>
+          <div class="table-wrap"><table class="dense"><thead><tr><th>Monat</th><th class="num">Tage unruhig</th><th class="num">Ø am Morgen</th><th class="num">schlechtester</th><th class="num">bester Tag</th></tr></thead><tbody id="monthBody"></tbody></table></div>
+        </div>
+      </div>
+    </details>
+  </section>
 
   <section class="card" aria-labelledby="hScreen">
     <div class="card-head">
@@ -573,8 +673,9 @@ footer p { margin: 0; }
   }
   const candleHover = hover($("candlePlot"), $("candleTip"));
   const riskHover = hover($("riskPlot"), $("riskTip"));
-  const histHover = hover($("histPlot"), $("histTip"));
   const regimeHover = hover($("regimePlot"), $("regimeTip"));
+  const distHover = hover($("distPlot"), $("distTip"));
+  const smileHover = hover($("smilePlot"), $("smileTip"));
 
   /* ---------- live values: the published book at live mid prices ---------- */
   const live = c => (mids[c] > 0 ? mids[c] : null);
@@ -621,7 +722,11 @@ footer p { margin: 0; }
     renderPositions();
     renderShorts();
     renderHedge();
+    safeModel();
     renderScreener();
+  }
+  function safeModel() {                             // the risk pictures must never stop the rest of the page
+    try { renderModel(); } catch (e) { $("modelCard").hidden = true; surf.model = null; console.error("Risikomodell:", e); }
   }
 
   /* ---------- the short side ---------- */
@@ -1108,11 +1213,8 @@ footer p { margin: 0; }
       $("varHint").textContent = r.ref_sigma
         ? `VaR: Verlust, der an 95 bzw. 99 von 100 Tagen nicht überschritten wird. ES: mittlerer Verlust an den Tagen jenseits davon. Mit Fat Tails: jeder der letzten ${r.n} Tage mit dem heutigen Buch gerechnet, durch seine damalige Volatilität geteilt und mit der von morgen malgenommen (gefilterte historische Simulation). Normal: dieselbe Volatilität, 1σ = ${usd(r.sigma)} am Tag (${pct(r.sigma / eq, 1)} des Kontos), mit Normalverteilung. Die Volatilität von morgen ist der Mittelwert aus GARCH(1,1) und dem Hidden-Markov-Modell; beide sagten das Risiko im Backtest besser voraus als das ${c.window_days}-Tage-Fenster.`
         : `VaR: Verlust, der an 95 bzw. 99 von 100 Tagen nicht überschritten wird. ES: mittlerer Verlust an den Tagen jenseits davon. 1σ = ${usd(r.sigma)} pro Tag (${pct(r.sigma / eq, 1)} des Kontos).`;
-      drawHist(r);
     } else {
       $("varBody").replaceChildren();
-      $("histPlot").replaceChildren();
-      histHover.clear();
       $("varHint").textContent = "Ohne offenes Buch gibt es kein Risiko zu messen.";
     }
     const cfg = [
@@ -1130,8 +1232,9 @@ footer p { margin: 0; }
     $("regimeBox").hidden = !(ys && ys.length > 5);
     if ($("regimeBox").hidden) { regimeHover.clear(); return; }
     const W = Math.max(280, Math.floor(plot.clientWidth || 480)), H = 140, M = { l: 40, r: 10, t: 12, b: 24 };
-    const pw = W - M.l - M.r, ph = H - M.t - M.b, n = ys.length, end = bot.t;
-    const X = i => M.l + i / (n - 1) * pw, Y = p => M.t + (1 - p) * ph, at = i => end - (n - 1 - i) * DAY;
+    const pw = W - M.l - M.r, ph = H - M.t - M.b, n = ys.length, end = r.t_end || bot.t;
+    const ages = r.ages && r.ages.length >= n ? r.ages.slice(-n) : null;    // days are left out where a close is missing
+    const X = i => M.l + i / (n - 1) * pw, Y = p => M.t + (1 - p) * ph, at = i => end - (ages ? ages[i] : n - 1 - i) * DAY;
     let s = svgOpen(W, H);
     for (const p of [0, 0.5, 1]) {
       s += `<line class="${p === 0.5 ? "ref" : p === 0 ? "axis" : "grid"}" x1="${M.l}" x2="${W - M.r}" y1="${f1(Y(p))}" y2="${f1(Y(p))}"/>`;
@@ -1147,38 +1250,604 @@ footer p { margin: 0; }
     const [calm, wild] = g.sd;
     $("regimeLegend").replaceChildren(el("span", null, `Ruhig: 1σ ≈ ${usd(calm)} am Tag · unruhig: ≈ ${usd(wild)} · ab 50 % zählt der Tag als unruhig. Ein Regime hält im Mittel ${num(1 / Math.max(1e-9, 1 - g.stay[0]), 0)} bzw. ${num(1 / Math.max(1e-9, 1 - g.stay[1]), 0)} Tage.`));
   }
-  function drawHist(r) {
-    const plot = $("histPlot"), xs = r.samples;
-    if (!xs || xs.length < 10) { plot.replaceChildren(); histHover.clear(); return; }
-    const W = Math.max(280, Math.floor(plot.clientWidth || 480)), H = 180, M = { l: 8, r: 8, t: 30, b: 26 };
-    const pw = W - M.l - M.r, ph = H - M.t - M.b;
-    const xt = niceTicks(Math.min(...xs), Math.max(...xs), W < 420 ? 4 : 6), xf = tickFmt(xt.step);
-    const nb = Math.min(30, Math.max(10, Math.round(Math.sqrt(xs.length) * 1.7)));
-    const width = (xt.hi - xt.lo) / nb, counts = new Array(nb).fill(0);
-    for (const v of xs) counts[Math.min(nb - 1, Math.floor((v - xt.lo) / width))]++;
-    const cmax = Math.max(...counts);
-    const X = v => M.l + (v - xt.lo) / (xt.hi - xt.lo) * pw, Y = c => M.t + (1 - c / cmax) * ph;
-    const v95 = -r["95"].hist, v99 = -r["99"].hist;
-    let s = svgOpen(W, H);
-    s += `<line class="axis" x1="${M.l}" x2="${W - M.r}" y1="${M.t + ph}" y2="${M.t + ph}"/>`;
-    xt.ticks.forEach((v, i) => { s += `<text x="${f1(X(v))}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === xt.ticks.length - 1 ? "end" : "middle"}">${xf(v)}</text>`; });
-    const centers = [];
-    counts.forEach((c, i) => {
-      const x0 = X(xt.lo + i * width), x1 = X(xt.lo + (i + 1) * width);
-      centers.push((x0 + x1) / 2);
-      if (!c) return;
-      s += `<rect class="bar${xt.lo + (i + 1) * width <= v95 + 1e-9 ? " tail" : ""}" x="${f1(x0 + 1)}" y="${f1(Y(c))}" width="${f1(Math.max(1, x1 - x0 - 2))}" height="${f1(M.t + ph - Y(c))}" rx="2"/>`;
-    });
-    const near = Math.abs(X(v95) - X(v99)) < 60;
-    for (const [v, label, dy] of [[v95, "VaR 95", near ? 12 : 0], [v99, "VaR 99", 0]]) {
-      s += `<line class="var" x1="${f1(X(v))}" x2="${f1(X(v))}" y1="${M.t - 6}" y2="${M.t + ph}"/><text class="lbl" x="${f1(X(v) + 4)}" y="${M.t - 10 + dy}">${label}</text>`;
+  /* ---------- the risk model: the fat tails, the smile GARCH implies, the regime surface of the HMM ---------- */
+  const SQ2PI = Math.sqrt(2 * Math.PI);
+  const npdf = (x, m, s) => Math.exp(-0.5 * ((x - m) / s) ** 2) / (s * SQ2PI);
+  const ncdf = x => {                  // Abramowitz and Stegun 26.2.17, error below 1e-7
+    const t = 1 / (1 + 0.2316419 * Math.abs(x)), d = 0.3989422804014327 * Math.exp(-x * x / 2);
+    const p = d * t * (0.31938153 + t * (-0.356563782 + t * (1.781477937 + t * (-1.821255978 + t * 1.330274429))));
+    return x >= 0 ? 1 - p : p;
+  };
+  const roundStep = v => { const m = 10 ** Math.floor(Math.log10(v)), r = v / m; return (r < 1.5 ? 1 : r < 3.5 ? 2 : r < 7.5 ? 5 : 10) * m; };
+  const often = d => d >= 1.5 ? `an ${sig(d, 2)} Tagen im Jahr` : d >= 0.67 ? "etwa einmal im Jahr"
+    : d >= 0.001 ? `alle ${sig(1 / d, 2)} Jahre einmal` : "seltener als alle 1.000 Jahre";
+  const sigmaLabel = k => k === 0 ? "0" : (k > 0 ? "+" : MINUS) + num(Math.abs(k), Number.isInteger(k) ? 0 : 1) + "σ";
+  const HZ = d => d === 1 ? "1 Tag" : d === 7 ? "1 Woche" : d === 30 ? "1 Monat" : `${d} Tage`;
+  const PHASE = { today: "heute", calm: "ruhig", turbulent: "unruhig" };
+  const pref = (key, ok, fallback) => { try { const v = localStorage.getItem(key); return ok.includes(v) ? v : fallback; } catch (e) { return fallback; } };
+  const keep = (key, v) => { try { localStorage.setItem(key, v); } catch (e) { /* storage unavailable */ } };
+  const press = (group, attr, value) => { for (const b of $(group).querySelectorAll("button")) b.setAttribute("aria-pressed", String(b.dataset[attr] === value)); };
+  const legendItem = (cls, text) => { const s = el("span"); s.append(el("i", "key " + cls), text); return s; };
+  const days1 = k => `${k} ${k === 1 ? "Tag" : "Tage"}`;
+  let distScale = pref("ls-bot-dist", ["log", "lin"], "log"), smilePhase = pref("ls-bot-phase", Object.keys(PHASE), "today");
+
+  function renderModel() {
+    const r = bot.risk;
+    $("modelCard").hidden = !(r && r.samples && r.samples.length >= 30 && r.sigma > 0 && r["99"]);
+    if ($("modelCard").hidden) { distHover.clear(); smileHover.clear(); surf.model = null; return; }
+    drawDist(r);
+    drawSmile(r);
+    surf.model = surfModel(r);
+    $("surfBox").hidden = !surf.model;
+    if (surf.model) {
+      drawSurf();
+      const [s0, s1] = surf.model.sd, big = surf.model.days.filter(d => d.surprise).length;
+      $("surfLegend").replaceChildren(legendItem("ramp", "ruhig → unruhig: Wahrscheinlichkeit des unruhigen Regimes im Rückblick"),
+        legendItem("dot ink small", "Ergebnis des Tages"), legendItem("dot ink", `mehr als 2σ neben der Erwartung am Morgen (${days1(big)})`),
+        legendItem("line ink", "Monatsanfang; vorne: morgen"));
+      $("surfNote").textContent = `Quer liegt die Verteilung eines Tages, nach hinten das Jahr (je ${surf.model.step} Tage eine Scheibe): eine Mischung aus dem ruhigen Regime (1σ ≈ ${usd(s0)}) und dem unruhigen (≈ ${usd(s1)}), gewichtet mit der Wahrscheinlichkeit, mit der das Hidden-Markov-Modell die Tage im Rückblick im unruhigen Regime sieht. ` +
+        "Hoch und schmal heißt ruhig, flach und breit unruhig. Vorne steht morgen, so wie der Bot es heute erwartet. Die Punkte zeigen, was an jedem Tag kam; die großen lagen mehr als 2σ neben dem, was das Modell am Morgen erwartete, und bleiben auch hinter der Fläche sichtbar. Ziehen oder die Pfeiltasten drehen die Fläche, ↑ und ↓ wählen einen Tag.";
     }
-    s += `<g class="hover" visibility="hidden"><line class="cross" x1="0" x2="0" y1="${M.t}" y2="${M.t + ph}"/></g></svg>`;
-    plot.innerHTML = s;
-    histHover.set(centers, i => {
-      const lo = xt.lo + i * width, hi = lo + width;
-      return [`${usd(lo)} bis ${usd(hi)}`, [["Messungen", String(counts[i])], ["Anteil", pct(counts[i] / xs.length, 1)]]];
+    renderModelTables(r);
+  }
+
+  /* one day of the book: the year at tomorrow's volatility (filtered historical simulation) against the normal */
+  function drawDist(r) {
+    press("distScale", "scale", distScale);
+    const plot = $("distPlot"), xs = r.samples, s = r.sigma, n = xs.length, log = distScale === "log";
+    const W = Math.max(220, Math.floor(plot.clientWidth || 480)), H = 244, M = { l: 40, r: 12, t: 40, b: 30 };
+    const pw = W - M.l - M.r, ph = H - M.t - M.b, base = M.t + ph, win = roundStep(s / 4);
+    const xt = niceTicks(Math.min(xs[0], -4.2 * s), Math.max(xs[n - 1], 4.2 * s), W < 420 ? 4 : 6), xf = tickFmt(xt.step);
+    const mean = xs.reduce((a, v) => a + v, 0) / n, sd = Math.sqrt(xs.reduce((a, v) => a + (v - mean) ** 2, 0) / n);
+    const iqr = xs[Math.floor(0.75 * (n - 1))] - xs[Math.floor(0.25 * (n - 1))];
+    const bw = 0.9 * Math.min(sd, iqr > 0 ? iqr / 1.34 : sd) * n ** -0.2;           // Silverman's kernel width
+    const G = Math.max(80, Math.min(200, Math.round(pw / 3))), grid = [], fat = [], nor = [];
+    for (let i = 0; i < G; i++) {
+      const x = xt.lo + (xt.hi - xt.lo) * i / (G - 1);
+      let f = 0;
+      for (const v of xs) f += npdf(x, v, bw);
+      grid.push(x);
+      fat.push(f / n * 365 * win);                         // days a year within `win` dollars of x
+      nor.push(npdf(x, 0, s) * 365 * win);
+    }
+    const top = Math.max(...fat, ...nor);
+    let Y, ticks, yf, floor;
+    if (log) {
+      const hi = 10 ** Math.ceil(Math.log10(top * 1.15));
+      floor = hi / 1e4;
+      Y = v => M.t + (Math.log10(hi) - Math.log10(Math.max(v, floor))) / 4 * ph;
+      ticks = [0, 1, 2, 3, 4].map(k => hi / 10 ** k);
+      yf = v => sig(v, 1);
+    } else {
+      const t = niceTicks(0, top * 1.08, 4);
+      floor = 0;
+      Y = v => M.t + (1 - v / t.hi) * ph;
+      ticks = t.ticks;
+      yf = tickFmt(t.step);
+    }
+    const X = v => M.l + (v - xt.lo) / (xt.hi - xt.lo) * pw;
+    let svg = svgOpen(W, H);
+    for (const v of ticks) {
+      svg += `<line class="grid" x1="${M.l}" x2="${W - M.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}"/>`;
+      svg += `<text x="${M.l - 6}" y="${f1(Y(v) + 4)}" text-anchor="end">${yf(v)}</text>`;
+    }
+    svg += `<line class="axis" x1="${M.l}" x2="${W - M.r}" y1="${base}" y2="${base}"/>`;
+    xt.ticks.forEach((v, i) => { svg += `<text x="${f1(X(v))}" y="${H - 8}" text-anchor="${i === 0 ? "start" : i === xt.ticks.length - 1 ? "end" : "middle"}">${xf(v)}</text>`; });
+    svg += `<text class="lbl" x="4" y="12">Tage im Jahr je Spanne von ${esc(usd(win))}</text>`;
+    const path = vals => {
+      let d = "", on = false;
+      vals.forEach((v, i) => { if (log && v < floor) { on = false; return; } d += (on ? "L" : "M") + f1(X(grid[i])) + "," + f1(Y(v)); on = true; });
+      return d;
+    };
+    const seen = fat.map(v => !log || v >= floor), i0 = seen.indexOf(true), i1 = seen.lastIndexOf(true);
+    if (i0 >= 0) svg += `<path class="dens-area" d="M${f1(X(grid[i0]))},${base}${fat.slice(i0, i1 + 1).map((v, k) => `L${f1(X(grid[i0 + k]))},${f1(Y(v))}`).join("")}L${f1(X(grid[i1]))},${base}Z"/>`;
+    svg += `<path class="norm" d="${path(nor)}"/><path class="dens" d="${path(fat)}"/>`;
+    const v95 = -r["95"].hist;
+    svg += xs.map(v => `<line class="rug${v <= v95 ? " loss" : ""}" x1="${f1(X(v))}" x2="${f1(X(v))}" y1="${base - 8}" y2="${base - 1}"/>`).join("");
+    const v99 = -r["99"].hist, n99 = -r["99"].param, fatLeft = v99 <= n99;
+    svg += `<line class="var-n" x1="${f1(X(n99))}" x2="${f1(X(n99))}" y1="${M.t - 4}" y2="${base}"/><line class="var" x1="${f1(X(v99))}" x2="${f1(X(v99))}" y1="${M.t - 4}" y2="${base}"/>`;
+    svg += `<text class="lbl" x="${f1(X(v99) + (fatLeft ? -4 : 4))}" y="${M.t - 10}" text-anchor="${fatLeft ? "end" : "start"}">VaR 99 %</text>`;
+    svg += `<text class="lbl" x="${f1(X(n99) + (fatLeft ? 4 : -4))}" y="${M.t - 10}" text-anchor="${fatLeft ? "start" : "end"}">normal</text>`;
+    svg += `<g class="hover" visibility="hidden"><line class="cross" x1="0" x2="0" y1="${M.t}" y2="${base}"/></g></svg>`;
+    plot.innerHTML = svg;
+    const below = x => { let k = 0; for (const v of xs) k += ncdf((x - v) / bw); return k / n; };
+    distHover.set(grid.map(X), i => {
+      const x = grid[i], loss = x < 0;
+      const fatP = loss ? below(x) : 1 - below(x), norP = loss ? ncdf(x / s) : 1 - ncdf(x / s);
+      const count = xs.filter(v => loss ? v <= x : v >= x).length;
+      return [loss ? `Verlust von ${usd(-x)} oder mehr` : `Gewinn von ${usd(x)} oder mehr`,
+        [["historische Simulation", often(fatP * 365)], ["Normalverteilung", often(norP * 365)], ["gezählt, letztes Jahr", days1(count)]]];
     }, M.t);
+    $("distLegend").replaceChildren(legendItem("line h1", "Fat Tails: das Jahr bei der Volatilität von morgen"),
+      legendItem("dash", `Normalverteilung, 1σ = ${usd(s)}`), legendItem("rug", "ein Strich je Tag"),
+      legendItem("rug loss", "Verlust über VaR 95 %"), legendItem("var", "VaR 99 %"));
+    const sh = r.shape;
+    let note = `VaR 99 %: ${usd(r["99"].hist)} mit Fat Tails, ${usd(r["99"].param)} mit Normalverteilung.`;
+    if (sh) {
+      const up = sh.beyond["3"], dn = sh.beyond["-3"];
+      note += ` Schiefe ${snum(sh.skew, 2)}, Kurtosis ${num(sh.kurt, 1)} (normal: 0 und 3). Über +3σ ${up === 1 ? "lag" : "lagen"} ${days1(up)}, unter −3σ ${days1(dn)}; normal wären es je ${num(sh.normal["3"], 1)}. ` +
+        (up > 1.5 * dn ? "Die dicken Ränder liegen auf der Gewinnseite: Große Gewinntage waren häufiger als große Verlusttage."
+          : dn > 1.5 * up ? "Die dicken Ränder liegen auf der Verlustseite: Große Verlusttage waren häufiger als große Gewinntage."
+          : "Die Ränder sind auf beiden Seiten ähnlich dick.");
+    }
+    if (log) note += " Logarithmische Skala: Jede Linie nach unten ist zehnmal seltener, so werden die Ränder sichtbar.";
+    $("distNote").textContent = note;
+  }
+
+  /* the smile: options on the book's PnL priced on GARCH paths, as the normal volatility with the same price */
+  function drawSmile(r) {
+    const sm = r.smile;
+    if (sm && sm.phases && !sm.phases[smilePhase] && sm.phases.today) smilePhase = "today";
+    press("smilePhase", "phase", smilePhase);
+    for (const b of $("smilePhase").querySelectorAll("button")) b.disabled = !(sm && sm.phases && sm.phases[b.dataset.phase]);
+    const plot = $("smilePlot"), ph = sm && sm.phases && sm.phases[smilePhase];
+    $("smileBox").hidden = !ph;
+    if (!ph) { smileHover.clear(); return; }
+    const W = Math.max(220, Math.floor(plot.clientWidth || 480)), H = 244, M = { l: 52, r: 14, t: 40, b: 30 };
+    const pw = W - M.l - M.r, hh = H - M.t - M.b, base = M.t + hh, ms = sm.m, k0 = ms[0], k1 = ms[ms.length - 1];
+    const all = [...ph.sd];                            // the phase's own range: the smile's shape is the point
+    for (const row of ph.iv) for (const v of row) if (v > 0) all.push(v);
+    const yt = niceTicks(Math.min(...all) * 0.96, Math.max(...all) * 1.03, 5), yf = tickFmt(yt.step);
+    const X = k => M.l + (k - k0) / (k1 - k0) * pw, Y = v => M.t + (1 - (v - yt.lo) / (yt.hi - yt.lo)) * hh;
+    let svg = svgOpen(W, H);
+    for (const v of yt.ticks) {
+      svg += `<line class="${v === yt.lo ? "axis" : "grid"}" x1="${M.l}" x2="${W - M.r}" y1="${f1(Y(v))}" y2="${f1(Y(v))}"/>`;
+      svg += `<text x="${M.l - 6}" y="${f1(Y(v) + 4)}" text-anchor="end">${yf(v)}${NB}$</text>`;
+    }
+    const first = Math.ceil(k0), last = Math.floor(k1);
+    for (let k = first; k <= last; k++) svg += `<text x="${f1(X(k))}" y="${H - 8}" text-anchor="${k === first ? "start" : k === last ? "end" : "middle"}">${sigmaLabel(k)}</text>`;
+    svg += `<line class="grid" x1="${f1(X(0))}" x2="${f1(X(0))}" y1="${M.t}" y2="${base}"/>`;
+    svg += `<text class="lbl" x="4" y="12">Implizite Volatilität am Tag, je Strike in σ vom Mittel</text>`;
+    svg += `<line class="norm" x1="${M.l}" x2="${W - M.r}" y1="${f1(Y(ph.sd[0]))}" y2="${f1(Y(ph.sd[0]))}"/>`;  // normal, same variance
+    sm.days.forEach((d, i) => {
+      let p = "", on = false;
+      ph.iv[i].forEach((v, j) => { if (!(v > 0)) { on = false; return; } p += (on ? "L" : "M") + f1(X(ms[j])) + "," + f1(Y(v)); on = true; });
+      svg += `<path class="hz hz${Math.min(3, i + 1)}" d="${p}"/>`;
+    });
+    svg += `<g class="hover" visibility="hidden"><line class="cross" x1="0" x2="0" y1="${M.t}" y2="${base}"/></g></svg>`;
+    plot.innerHTML = svg;
+    smileHover.set(ms.map(X), j => [`Strike ${sigmaLabel(ms[j])} vom Mittel`,
+      sm.days.map((d, i) => [HZ(d), `${ph.iv[i][j] > 0 ? usd(ph.iv[i][j]) : "–"} (normal ${usd(ph.sd[i])})`])], M.t);
+    $("smileLegend").replaceChildren(...sm.days.map((d, i) => legendItem(`line h${Math.min(3, i + 1)}`, HZ(d))),
+      legendItem("dash", `Normalverteilung mit derselben Varianz, 1 Tag: waagrecht bei ${usd(ph.sd[0])}`));
+    // what the picture says, for the phase shown
+    const at = k => ms.indexOf(k), one = ph.iv[0], atm = one[at(0)];
+    const L = one[at(-2.5)] || one[at(-2)], R = one[at(2.5)] || one[at(2)];
+    const start = { today: `Start: die Volatilität von morgen, wie der Bot sie aus GARCH und dem Hidden-Markov-Modell rechnet, 1σ = ${usd(ph.start)}.`,
+                    calm: `Start: so ruhig, wie dieselbe Prognose an den ruhigsten 10 % der Tage im Jahr war, 1σ = ${usd(ph.start)}.`,
+                    turbulent: `Start: so unruhig, wie dieselbe Prognose an den unruhigsten 10 % der Tage im Jahr war, 1σ = ${usd(ph.start)}.` }[smilePhase];
+    const lifted = atm > 0 ? Math.max(L || 0, R || 0) / atm : 1, tilt = L > 0 && R > 0 ? R / L : 1;
+    const shape = lifted < 1.04 ? "Für einen Tag ist die Kurve fast flach: kaum dickere Ränder als bei einer Normalverteilung."
+      : tilt > 1.08 ? "Für einen Tag steigt die Kurve nach rechts (ein Smirk): Große Gewinntage waren häufiger als große Verlusttage."
+      : tilt < 0.92 ? "Für einen Tag steigt die Kurve nach links (ein Smirk): Große Verlusttage waren häufiger als große Gewinntage."
+      : "Für einen Tag lächelt die Kurve: Große Ausschläge in beide Richtungen waren häufiger als normal.";
+    const sd = ph.sd, longRun = sm.long > 0 ? usd(sm.long) : null;      // the level GARCH returns to, per day
+    const term = !longRun || sd.length < 2 ? "" : sd[sd.length - 1] > 1.015 * sd[0]
+      ? ` Woche und Monat liegen höher: Die Volatilität startet unter dem Niveau, zu dem GARCH auf Dauer zurückkehrt (${longRun}), und steigt im Mittel dorthin.`
+      : sd[sd.length - 1] < 0.985 * sd[0]
+        ? ` Woche und Monat liegen tiefer: Die Volatilität startet über dem Niveau, zu dem GARCH auf Dauer zurückkehrt (${longRun}), und fällt im Mittel dorthin.`
+        : ` Die Fristen liegen fast gleich hoch: Die Volatilität ist nahe dem Niveau, zu dem GARCH auf Dauer zurückkehrt (${longRun}).`;
+    // does the month bend less than the day? measured at ±2σ, where the paths are dense enough to tell
+    const bend = row => { const a = row[at(0)], l = row[at(-2)], h = row[at(2)]; return a > 0 && l > 0 && h > 0 ? (l + h) / 2 / a : null; };
+    const b1 = bend(ph.iv[0]), bN = bend(ph.iv[ph.iv.length - 1]);
+    const flat = b1 == null || bN == null || sm.days.length < 2 ? ""
+      : bN < b1 - 0.02 ? " Über einen Monat mitteln sich viele Tage, der Smile wird flacher; was bleibt, kommt aus der Schiefe der Tage und den Volatilitäts-Clustern."
+        : " Über einen Monat bleibt der Smile fast so stark wie über einen Tag: Die Schiefe der Tage und die Volatilitäts-Cluster mitteln sich nicht weg.";
+    const wider = ph.sd[0] / ph.start - 1;             // the year's days, divided by their forecast, vary by more than 1
+    const line = Math.abs(wider) < 0.005 ? "" : ` Die waagrechte Linie liegt bei ${usd(ph.sd[0])}, nicht bei ${usd(ph.start)}: Gemessen an ihrer Prognose schwankten die Tage des Jahres um ${pct(Math.abs(wider), 0)} ${wider > 0 ? "stärker" : "schwächer"}.`;
+    $("smileNote").textContent = `${start}${line} ${shape}${term}${flat} ` +
+      "Je Strike der Preis einer Option auf das Ergebnis des Buchs, für Woche und Monat auf 10.000 GARCH-Pfaden gerechnet, für einen Tag exakt, und in die Volatilität einer Normalverteilung mit demselben Preis zurückgerechnet (Bachelier). Eine Normalverteilung mit derselben Varianz wäre die waagrechte Linie.";
+  }
+
+  /* the regime surface: for every day of the year the distribution of a day in the regime the hidden Markov model
+     sees it in, in hindsight; tomorrow at the front as the bot expects it */
+  // world: P&L across [-AX, AX], time along [-AY (tomorrow), AY (a year ago)], density up to ZTOP
+  // (on a narrow screen the year is shorter, so the surface keeps its height)
+  const AX = 0.75, ZTOP = 0.6, TH = [-0.2, Math.PI / 2 + 0.35], PH = [0.05, Math.PI / 2];
+  let AY = 1.9;
+  const VIEWS = { tilt: { th: 1.18, ph: 0.68 }, front: { th: 0, ph: 0.38 }, top: { th: Math.PI / 2, ph: Math.PI / 2 } };
+  const surf = { cam: { ...VIEWS.tilt }, view: "tilt", model: null, items: [], day: null, drag: null, raf: 0, lut: null, lutKey: "", W: 0, H: 0, peak: null };
+  const lin = c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const gam = c => (c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055);
+  function toLab(hex) {
+    const h = hex.replace("#", ""), v = h.length === 3 ? [...h].map(c => parseInt(c + c, 16)) : [0, 2, 4].map(i => parseInt(h.slice(i, i + 2), 16));
+    const [r, g, b] = v.map(x => lin(x / 255));
+    const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b), m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b),
+      s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+    return [0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s, 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s];
+  }
+  function fromLab([L, a, b]) {
+    const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3, m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3, s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+    const rgb = [4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s, -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s, -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s];
+    return "rgb(" + rgb.map(c => Math.round(255 * Math.min(1, Math.max(0, gam(Math.max(0, c)))))).join(",") + ")";
+  }
+  function regimeLut(css) {                           // colour by P(turbulent) (33 steps) and light (12 steps)
+    const key = [css("--calm"), css("--mid"), css("--wild")].join();
+    if (surf.lut && surf.lutKey === key) return surf.lut;
+    const [c, m, w] = [css("--calm"), css("--mid"), css("--wild")].map(toLab), lut = [];
+    for (let i = 0; i <= 32; i++) {
+      const p = i / 32, [A, B, t] = p < 0.5 ? [c, m, p / 0.5] : [m, w, (p - 0.5) / 0.5], col = A.map((v, k) => v + (B[k] - v) * t), row = [];
+      for (let j = 0; j < 12; j++) { const sh = 0.72 + 0.32 * j / 11; row.push(fromLab([Math.min(0.97, col[0] * sh), col[1] * sh, col[2] * sh])); }
+      lut.push(row);
+    }
+    surf.lut = lut;
+    surf.lutKey = key;
+    return lut;
+  }
+  function surfModel(r) {
+    const g = r.regime, pnl = r.pnl;
+    if (!g || !g.pred || !g.mu || !g.sd || !pnl || pnl.length < 30 || g.pred.length !== pnl.length) return null;
+    const n = pnl.length, [m0, m1] = g.mu, [s0, s1] = g.sd, end = r.t_end || bot.t;
+    const dens = (p, x) => (1 - p) * npdf(x, m0, s0) + p * npdf(x, m1, s1);
+    const moments = p => {                             // mean and standard deviation of the mixture
+      const m = (1 - p) * m0 + p * m1;
+      return [m, Math.sqrt(Math.max(0, (1 - p) * (s0 * s0 + m0 * m0) + p * (s1 * s1 + m1 * m1) - m * m))];
+    };
+    // the surface: the regime each day is in, seen in hindsight (smoothed); the surprise: the result against what
+    // the model expected that morning
+    const seen = g.smoothed && g.smoothed.length === n ? g.smoothed : g.pred;
+    // a day with a missing close is left out of the year: the others keep their dates and their place in time
+    const ages = r.ages && r.ages.length === n ? r.ages : null, total = ages ? ages[0] + 1 : n;
+    const day = (t, pos, v, p, morning) => {
+      const [mean, sd] = moments(morning);
+      return { t, pos, pnl: v, p, morning, mean, sd, surprise: v != null && Math.abs(v - mean) > 2 * sd };
+    };
+    const days = pnl.map((v, i) => { const age = ages ? ages[i] : n - 1 - i; return day(end - age * DAY, total - 1 - age, v, seen[i], g.pred[i]); });
+    days.push(day(end + DAY, total, null, g.tomorrow, g.tomorrow));
+    const step = ($("surfCanvas").clientWidth || 600) < 560 ? 4 : 3, groups = [[n]];
+    for (let b = n - 1; b >= 0; b -= step) { const gr = []; for (let i = Math.max(0, b - step + 1); i <= b; i++) gr.push(i); groups.push(gr); }
+    groups.reverse();
+    let span = Math.max(3.2 * s1 + Math.abs(m1), 3.2 * s0 + Math.abs(m0));
+    for (const v of pnl) span = Math.max(span, Math.abs(v));
+    span *= 1.04;
+    const J = 40, xs = Array.from({ length: J }, (_, j) => -span + 2 * span * j / (J - 1));
+    const slices = groups.map(ix => {
+      const p = ix.reduce((a, i) => a + days[i].p, 0) / ix.length, c = ix.reduce((a, i) => a + days[i].pos, 0) / ix.length;
+      return { ix, p, c, z: xs.map(x => dens(p, x)) };
+    });
+    let zmax = 0;
+    for (const sl of slices) for (const v of sl.z) zmax = Math.max(zmax, v);
+    const quadOf = [], months = [];                    // per day the pair of slices it lies between
+    for (let i = 0, k = 0; i <= n; i++) { while (k < slices.length - 2 && slices[k + 1].c < days[i].pos) k++; quadOf.push(k); }
+    for (let i = 1; i < n; i++) {
+      if (new Date(days[i].t).getMonth() === new Date(days[i - 1].t).getMonth()) continue;
+      const k = slices.findIndex(sl => sl.ix.includes(i));
+      if (k >= 0 && !months.some(m => m.k === k)) months.push({ k, t: days[i].t });
+    }
+    const near = pos => {                              // the day closest to a place in time
+      let lo = 0, hi = n;
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (days[mid].pos <= pos) lo = mid; else hi = mid; }
+      return pos - days[lo].pos <= days[hi].pos - pos ? lo : hi;
+    };
+    return { n, total, step, days, slices, xs, span, zmax, dens, months, quadOf, near, mu: [m0, m1], sd: [s0, s1] };
+  }
+  function drawSurf() {
+    const cv = $("surfCanvas"), M = surf.model;
+    if (!M) return;
+    const W = Math.max(200, Math.floor(cv.parentElement.clientWidth || 600));
+    AY = W < 560 ? 1.15 : W < 820 ? 1.5 : 1.9;
+    const pad = { l: W < 480 ? 34 : 56, r: W < 480 ? 56 : 72, t: 20, b: 40 };
+    const box = cam => {                             // the projected extent of the world box from a camera
+      const c = Math.cos(cam.th), s = Math.sin(cam.th), e = Math.cos(cam.ph), f = Math.sin(cam.ph);
+      let a = Infinity, b = -Infinity, g = Infinity, h = -Infinity;
+      for (const X of [-AX, AX]) for (const Y of [-AY, AY]) for (const Z of [0, ZTOP]) {
+        const u = X * c - Y * s, v = Z * e + (X * s + Y * c) * f;
+        a = Math.min(a, u); b = Math.max(b, u); g = Math.min(g, v); h = Math.max(h, v);
+      }
+      return [a, b, g, h];
+    };
+    // the height follows the default view, so turning the surface never makes the page jump
+    const [a0, a1, g0, g1] = box(VIEWS.tilt);
+    const H = Math.round(Math.min(460, Math.max(240, (g1 - g0) / (a1 - a0) * (W - pad.l - pad.r) + pad.t + pad.b)));
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (surf.W !== W || surf.H !== H || cv.width !== Math.round(W * dpr)) {
+      cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.height = H + "px"; surf.W = W; surf.H = H;
+    }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, W, H);
+    const cs = getComputedStyle(document.documentElement), css = k => cs.getPropertyValue(k).trim();
+    const C = { line: css("--line"), base: css("--base"), muted: css("--muted"), ink: css("--ink"), ink2: css("--ink-2"), panel: css("--panel") };
+    const ct = Math.cos(surf.cam.th), st = Math.sin(surf.cam.th), cp = Math.cos(surf.cam.ph), sp = Math.sin(surf.cam.ph);
+    const raw = (X, Y, Z) => { const x1 = X * ct - Y * st, y1 = X * st + Y * ct; return [x1, Z * cp + y1 * sp, y1 * cp - Z * sp]; };
+    const [u0, u1, v0, v1] = box(surf.cam);
+    const sc = Math.min((W - pad.l - pad.r) / (u1 - u0), (H - pad.t - pad.b) / (v1 - v0));
+    const cx = pad.l + (W - pad.l - pad.r - (u1 - u0) * sc) / 2 - u0 * sc, cy = pad.t + (H - pad.t - pad.b - (v1 - v0) * sc) / 2 + v1 * sc;
+    const P = (X, Y, Z) => { const [u, v, d] = raw(X, Y, Z); return [cx + u * sc, cy - v * sc, d]; };
+    const { slices, xs, span, zmax, n } = M, S = slices.length, J = xs.length;
+    const Yc = c => AY * (1 - 2 * c / M.total), Xv = x => AX * x / span, Zv = z => ZTOP * z / zmax;
+    const V = slices.map(sl => xs.map((x, j) => [Xv(x), Yc(sl.c), Zv(sl.z[j])]));
+    const Pv = V.map(row => row.map(([X, Y, Z]) => P(X, Y, Z)));
+    // the floor: dollar ticks and month starts, its outline and the vertical edge at the back corner
+    const xt = niceTicks(-span, span, W < 480 ? 4 : 6), xf = tickFmt(xt.step), ticks = xt.ticks.filter(v => Math.abs(v) <= span);
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = C.line;
+    ctx.beginPath();
+    for (const v of ticks) { const a = P(Xv(v), -AY, 0), b = P(Xv(v), AY, 0); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+    for (const m of M.months) { const y = Yc(slices[m.k].c), a = P(-AX, y, 0), b = P(AX, y, 0); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+    ctx.stroke();
+    const corners = [[-AX, -AY], [AX, -AY], [AX, AY], [-AX, AY]];
+    ctx.strokeStyle = C.base;
+    ctx.beginPath();
+    corners.forEach(([X, Y], i) => { const q = P(X, Y, 0); if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); });
+    ctx.closePath();
+    const back = corners.reduce((b, c) => raw(c[0], c[1], 0)[2] > raw(b[0], b[1], 0)[2] ? c : b);
+    const b0 = P(back[0], back[1], 0), b1 = P(back[0], back[1], ZTOP);
+    ctx.moveTo(b0[0], b0[1]);
+    ctx.lineTo(b1[0], b1[1]);
+    ctx.stroke();
+    // the surface as quads, lit from the viewer's upper left whatever the angle, drawn back to front
+    const lu = -0.4, lv = 0.75, ld = -0.55, ly1 = lv * sp + ld * cp, lz = lv * cp - ld * sp;
+    const lgt = [lu * ct + ly1 * st, -lu * st + ly1 * ct, lz], ln = Math.hypot(...lgt), items = [], qd = [];
+    for (let k = 0; k < S - 1; k++) {
+      const row = [];
+      for (let j = 0; j < J - 1; j++) {
+        const A = V[k][j], B = V[k][j + 1], Cc = V[k + 1][j + 1], D = V[k + 1][j];
+        const e1 = [Cc[0] - A[0], Cc[1] - A[1], Cc[2] - A[2]], e2 = [D[0] - B[0], D[1] - B[1], D[2] - B[2]];
+        let nx = e1[1] * e2[2] - e1[2] * e2[1], ny = e1[2] * e2[0] - e1[0] * e2[2], nz = e1[0] * e2[1] - e1[1] * e2[0];
+        if (nz < 0) { nx = -nx; ny = -ny; nz = -nz; }
+        const lam = Math.max(0, (nx * lgt[0] + ny * lgt[1] + nz * lgt[2]) / ((Math.hypot(nx, ny, nz) || 1) * ln));
+        const pts = [Pv[k][j], Pv[k][j + 1], Pv[k + 1][j + 1], Pv[k + 1][j]], depth = (pts[0][2] + pts[1][2] + pts[2][2] + pts[3][2]) / 4;
+        row.push(depth);
+        items.push({ kind: 0, k, pts, depth, p: (slices[k].p + slices[k + 1].p) / 2, lam });
+      }
+      qd.push(row);
+    }
+    const ridge = (k, strong) => {
+      for (let j = 0; j < J - 1; j++) {
+        const near = Math.min(k > 0 ? qd[k - 1][j] : Infinity, k < S - 1 ? qd[k][j] : Infinity);
+        items.push({ kind: 1, a: Pv[k][j], b: Pv[k][j + 1], depth: near - 1e-6, strong });
+      }
+    };
+    for (const m of M.months) ridge(m.k, false);
+    ridge(S - 1, true);                                // tomorrow, at the front
+    M.days.forEach((dy, i) => {                        // each day's result on its curve; the surprises stand out
+      if (dy.pnl == null) return;
+      const q = P(Xv(dy.pnl), Yc(dy.pos), Zv(M.dens(dy.p, dy.pnl)));
+      const jq = Math.min(J - 2, Math.max(0, Math.floor((dy.pnl + span) / (2 * span) * (J - 1))));
+      items.push({ kind: 2, x: q[0], y: q[1], depth: Math.min(q[2], qd[M.quadOf[i]][jq]) - 2e-6, day: i, big: dy.surprise });
+    });
+    items.sort((a, b) => b.depth - a.depth);
+    const lut = regimeLut(css);
+    ctx.lineJoin = "round";
+    const top = items.filter(it => it.big);             // the surprises stay visible, also behind the surface
+    for (const it of items) {
+      if (it.big) continue;
+      if (it.kind === 0) {
+        const col = lut[Math.round(it.p * 32)][Math.round(it.lam * 11)], q = it.pts;
+        ctx.fillStyle = col; ctx.strokeStyle = col; ctx.lineWidth = 0.8;
+        ctx.beginPath(); ctx.moveTo(q[0][0], q[0][1]); ctx.lineTo(q[1][0], q[1][1]); ctx.lineTo(q[2][0], q[2][1]); ctx.lineTo(q[3][0], q[3][1]); ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else if (it.kind === 1) {
+        ctx.strokeStyle = C.ink; ctx.globalAlpha = it.strong ? 0.9 : 0.3; ctx.lineWidth = it.strong ? 1.6 : 1;
+        ctx.beginPath(); ctx.moveTo(it.a[0], it.a[1]); ctx.lineTo(it.b[0], it.b[1]); ctx.stroke();
+        ctx.globalAlpha = 1;
+      } else {
+        ctx.fillStyle = C.ink; ctx.globalAlpha = 0.45;
+        ctx.beginPath(); ctx.arc(it.x, it.y, 1.3, 0, 2 * Math.PI); ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
+    ctx.fillStyle = C.ink; ctx.strokeStyle = C.panel; ctx.lineWidth = 1.5;
+    for (const it of top) { ctx.beginPath(); ctx.arc(it.x, it.y, 3.2, 0, 2 * Math.PI); ctx.fill(); ctx.stroke(); }
+    surf.items = items;
+    surf.top = top;
+    // the chosen day on top: its curve and its result
+    surf.peak = null;
+    if (surf.day != null && M.days[surf.day]) {
+      const dy = M.days[surf.day], Y = Yc(dy.pos);
+      ctx.strokeStyle = C.ink; ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      let best = null;
+      xs.forEach((x, j) => { const q = P(Xv(x), Y, Zv(M.dens(dy.p, x))); if (j) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); if (!best || q[1] < best[1]) best = q; });
+      ctx.stroke();
+      surf.peak = best;
+      if (dy.pnl != null) {
+        const q = P(Xv(dy.pnl), Y, Zv(M.dens(dy.p, dy.pnl)));
+        ctx.fillStyle = C.ink; ctx.strokeStyle = C.panel; ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(q[0], q[1], 4.5, 0, 2 * Math.PI); ctx.fill(); ctx.stroke();
+      }
+    }
+    // labels on the two floor edges nearest the viewer, pushed outward: dollars along one, months along the other
+    const o = P(0, 0, 0);
+    const outward = (q, gap) => { const dx = q[0] - o[0], dy = q[1] - o[1], l = Math.hypot(dx, dy) || 1; return [dx / l, dy / l, q[0] + dx / l * gap, q[1] + dy / l * gap]; };
+    const place = ([ox, oy]) => {
+      ctx.textAlign = ox > 0.35 ? "left" : ox < -0.35 ? "right" : "center";
+      ctx.textBaseline = oy > 0.35 ? "top" : oy < -0.35 ? "bottom" : "middle";
+    };
+    ctx.font = `11px ${css("--font-num")}`;
+    ctx.fillStyle = C.muted;
+    const yEdge = raw(0, -AY, 0)[2] <= raw(0, AY, 0)[2] ? -AY : AY, xEdge = raw(-AX, 0, 0)[2] <= raw(AX, 0, 0)[2] ? -AX : AX;
+    const yDir = outward(P(0, yEdge, 0), 0), xDir = outward(P(xEdge, 0, 0), 0);
+    const labels = (items, dir) => {                 // text along an edge, skipping any that would touch the last one
+      place(dir);
+      let last = null;
+      for (const [text, q] of items) {
+        const x = q[0] + dir[0] * 10, y = q[1] + dir[1] * 10, w = ctx.measureText(text).width, h = 12;
+        const l = ctx.textAlign === "left" ? x : ctx.textAlign === "right" ? x - w : x - w / 2;
+        const t = ctx.textBaseline === "top" ? y : ctx.textBaseline === "bottom" ? y - h : y - h / 2;
+        const r = [l - 4, t - 2, l + w + 4, t + h + 2];
+        if (last && r[0] < last[2] && last[0] < r[2] && r[1] < last[3] && last[1] < r[3]) continue;
+        ctx.fillText(text, x, y);
+        last = r;
+      }
+    };
+    labels(ticks.map(v => [xf(v) + NB + "$", P(Xv(v), yEdge, 0)]), yDir);
+    labels([...M.months].sort((a, b) => b.t - a.t).map(m => [new Date(m.t).toLocaleDateString("de-DE", { month: "short" }), P(xEdge, Yc(slices[m.k].c), 0)]), xDir);
+    ctx.font = `11.5px ${css("--font-ui")}`;
+    ctx.fillStyle = C.ink2;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const tm = Pv[S - 1].reduce((b, q) => (q[1] < b[1] ? q : b));
+    ctx.fillText("morgen", tm[0], tm[1] - 6);
+    if (Math.abs(b1[1] - b0[1]) > 24) ctx.fillText("Dichte", b1[0], b1[1] - 4);
+  }
+  const schedule = () => { if (!surf.raf) surf.raf = requestAnimationFrame(() => { surf.raf = 0; drawSurf(); }); };
+  const inTri = (x, y, a, b, c) => {
+    const s1 = (b[0] - a[0]) * (y - a[1]) - (b[1] - a[1]) * (x - a[0]), s2 = (c[0] - b[0]) * (y - b[1]) - (c[1] - b[1]) * (x - b[0]),
+      s3 = (a[0] - c[0]) * (y - c[1]) - (a[1] - c[1]) * (x - c[0]);
+    return (s1 >= 0 && s2 >= 0 && s3 >= 0) || (s1 <= 0 && s2 <= 0 && s3 <= 0);
+  };
+  function surfPick(x, y) {                        // the frontmost dot or quad under the pointer, as a day
+    const M = surf.model;
+    let hit = null, best = 36;                       // the surprises are drawn on top: the nearest one wins
+    for (const it of surf.top || []) { const d = (it.x - x) ** 2 + (it.y - y) ** 2; if (d <= best) { best = d; hit = it.day; } }
+    if (hit != null) return hit;
+    for (let q = surf.items.length - 1; q >= 0; q--) {
+      const it = surf.items[q];
+      if (it.kind === 2) { if ((it.x - x) ** 2 + (it.y - y) ** 2 <= 30) return it.day; continue; }
+      if (it.kind !== 0) continue;
+      const [a, b, c, d] = it.pts;
+      if (!inTri(x, y, a, b, c) && !inTri(x, y, a, c, d)) continue;
+      const mA = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], vx = (c[0] + d[0]) / 2 - mA[0], vy = (c[1] + d[1]) / 2 - mA[1], l2 = vx * vx + vy * vy;
+      const t = l2 > 0 ? Math.min(1, Math.max(0, ((x - mA[0]) * vx + (y - mA[1]) * vy) / l2)) : 0.5;
+      const c0 = M.slices[it.k].c, c1 = M.slices[it.k + 1].c;
+      return M.near(c0 + t * (c1 - c0));
+    }
+    return null;
+  }
+  function surfTip(i, x, y) {
+    const tip = $("surfTip"), M = surf.model, dy = M.days[i], last = i === M.n;
+    const rows = last ? [["unruhig, erwartet", pct(dy.morning)]] : [["unruhig im Rückblick", pct(dy.p)], ["am Morgen erwartet", pct(dy.morning)]];
+    if (dy.pnl != null) rows.push(["Ergebnis", susd(dy.pnl)], ["neben der Erwartung", `${snum((dy.pnl - dy.mean) / dy.sd, 1)}σ`]);
+    rows.push(["1σ laut Hidden-Markov-Modell", usd(dy.sd)]);
+    tip.replaceChildren(el("div", "head", i === M.n ? "morgen" : dmy(dy.t)),
+      ...rows.map(([k, v]) => { const r = el("div", "row"); r.append(el("span", null, k), el("b", null, v)); return r; }));
+    tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight, room = surf.W || 600;
+    tip.style.transform = `translate(${Math.round(Math.max(0, x + 14 + tw > room ? x - 14 - tw : x + 14))}px, ${Math.round(Math.max(0, y - th - 12))}px)`;
+  }
+  function surfGo(view) {
+    const to = VIEWS[view], from = { ...surf.cam };
+    surf.view = view;
+    press("surfView", "view", view);
+    if (!surf.model || matchMedia("(prefers-reduced-motion: reduce)").matches) { surf.cam = { ...to }; if (surf.model) drawSurf(); return; }
+    const t0 = performance.now();
+    const tick = now => {
+      const t = Math.min(1, (now - t0) / 420), e = t < 0.5 ? 4 * t ** 3 : 1 - (-2 * t + 2) ** 3 / 2;
+      surf.cam = { th: from.th + (to.th - from.th) * e, ph: from.ph + (to.ph - from.ph) * e };
+      drawSurf();
+      if (t < 1 && surf.view === view) requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }
+  (() => {
+    const cv = $("surfCanvas");
+    const local = e => { const b = cv.getBoundingClientRect(); return [e.clientX - b.left, e.clientY - b.top]; };
+    const pickAt = (x, y) => {
+      const i = surfPick(x, y);
+      if (i !== surf.day) { surf.day = i; schedule(); }
+      if (i == null) $("surfTip").hidden = true; else surfTip(i, x, y);
+    };
+    const turn = (dth, dph) => {
+      surf.cam = { th: Math.max(TH[0], Math.min(TH[1], surf.cam.th + dth)), ph: Math.max(PH[0], Math.min(PH[1], surf.cam.ph + dph)) };
+      if (surf.view) { surf.view = null; press("surfView", "view", ""); }
+    };
+    cv.addEventListener("pointerdown", e => {
+      if (!surf.model) return;
+      surf.drag = { x: e.clientX, y: e.clientY, th: surf.cam.th, ph: surf.cam.ph, moved: false, touch: e.pointerType !== "mouse" };
+      try { cv.setPointerCapture(e.pointerId); } catch (err) { /* not capturable */ }
+    });
+    cv.addEventListener("pointermove", e => {
+      if (!surf.model) return;
+      const d = surf.drag;
+      if (d) {
+        const dx = e.clientX - d.x, dy = e.clientY - d.y;
+        if (!d.moved && Math.abs(dx) + Math.abs(dy) < 4) return;
+        d.moved = true;
+        cv.classList.add("dragging");
+        $("surfTip").hidden = true;
+        surf.cam = { th: d.th, ph: d.ph };
+        turn(dx * 0.008, d.touch ? 0 : dy * 0.006);
+        schedule();
+      } else if (e.pointerType === "mouse") pickAt(...local(e));
+    });
+    const end = e => {
+      const d = surf.drag;
+      surf.drag = null;
+      cv.classList.remove("dragging");
+      if (d && !d.moved && e.type === "pointerup") pickAt(...local(e));
+    };
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+    cv.addEventListener("pointerleave", e => { if (e.pointerType === "mouse" && !surf.drag && surf.day != null) { surf.day = null; $("surfTip").hidden = true; schedule(); } });
+    cv.addEventListener("keydown", e => {
+      const M = surf.model;
+      if (!M) return;
+      const by = e.shiftKey ? 7 : 1;
+      if (e.key === "ArrowLeft" || e.key === "ArrowRight") turn(e.key === "ArrowLeft" ? -0.12 : 0.12, 0);
+      else if (e.key === "PageUp" || e.key === "PageDown") turn(0, e.key === "PageUp" ? 0.1 : -0.1);
+      else if (e.key === "ArrowUp") surf.day = Math.max(0, (surf.day ?? M.n) - by);
+      else if (e.key === "ArrowDown") surf.day = Math.min(M.n, (surf.day ?? M.n) + by);
+      else if (e.key === "Home") { e.preventDefault(); surfGo("tilt"); return; }
+      else if (e.key === "Escape") { surf.day = null; $("surfTip").hidden = true; schedule(); return; }
+      else return;
+      e.preventDefault();
+      drawSurf();
+      if (surf.day != null && surf.peak) surfTip(surf.day, surf.peak[0], surf.peak[1]);
+    });
+    cv.addEventListener("focus", () => {
+      if (!surf.model || !cv.matches(":focus-visible")) return;
+      if (surf.day == null) surf.day = surf.model.n;
+      drawSurf();
+      if (surf.peak) surfTip(surf.day, surf.peak[0], surf.peak[1]);
+    });
+    cv.addEventListener("blur", () => { if (surf.day != null) { surf.day = null; $("surfTip").hidden = true; schedule(); } });
+    for (const b of $("surfView").querySelectorAll("button")) b.addEventListener("click", () => surfGo(b.dataset.view));
+    for (const b of $("distScale").querySelectorAll("button")) b.addEventListener("click", () => {
+      distScale = b.dataset.scale; keep("ls-bot-dist", distScale); if (bot && bot.risk && !$("modelCard").hidden) drawDist(bot.risk);
+    });
+    for (const b of $("smilePhase").querySelectorAll("button")) b.addEventListener("click", () => {
+      smilePhase = b.dataset.phase; keep("ls-bot-phase", smilePhase); if (bot && bot.risk && !$("modelCard").hidden) { drawSmile(bot.risk); renderSmileTable(bot.risk); }
+    });
+    const scheme = matchMedia("(prefers-color-scheme: dark)");
+    if (scheme.addEventListener) scheme.addEventListener("change", () => { if (surf.model) drawSurf(); });
+  })();
+
+  function renderModelTables(r) {
+    const sh = r.shape, tails = [];
+    if (sh) {
+      for (const [k, label] of [["-3", "unter −3σ"], ["-2", "unter −2σ"], ["2", "über +2σ"], ["3", "über +3σ"]]) {
+        const seen = sh.beyond[k], e = sh.normal[k.replace("-", "")], tr = el("tr");
+        tr.append(td(label), td(String(seen), "num"), td(num(e, 1), "num"), td(e > 0 ? num(seen / e, 1) + "×" : "–", "num"));
+        tails.push(tr);
+      }
+    }
+    $("tailBody").replaceChildren(...tails);
+    $("tailBlock").hidden = !tails.length;
+    renderSmileTable(r);
+    const M = surf.model, months = [];
+    if (M) {
+      const by = new Map();
+      for (const d of M.days.slice(0, M.n)) {
+        const dt = new Date(d.t), key = dt.getFullYear() * 12 + dt.getMonth();
+        if (!by.has(key)) by.set(key, []);
+        by.get(key).push(d);
+      }
+      for (const [key, ds] of by) {
+        const wild = ds.filter(d => d.p > 0.5).length, mean = ds.reduce((a, d) => a + d.morning, 0) / ds.length, tr = el("tr");
+        tr.append(td(new Date(Math.floor(key / 12), key % 12, 1).toLocaleDateString("de-DE", { month: "short", year: "2-digit" })),
+          td(`${wild} von ${ds.length}`, "num"), td(pct(mean), "num"),
+          td(susd(Math.min(...ds.map(d => d.pnl))), "num"), td(susd(Math.max(...ds.map(d => d.pnl))), "num"));
+        months.push(tr);
+      }
+    }
+    $("monthBody").replaceChildren(...months);
+    $("monthBlock").hidden = !months.length;
+  }
+  function renderSmileTable(r) {
+    const sm = r.smile, ph = sm && sm.phases && sm.phases[smilePhase];
+    $("smileTableHead").textContent = `Smile, ${PHASE[smilePhase]}: implizite Volatilität in $ am Tag`;
+    $("smileBlock").hidden = !ph;
+    if (!ph) { $("smileHead").replaceChildren(); $("smileBody").replaceChildren(); return; }
+    const hr = el("tr");
+    hr.append(el("th", null, "Strike"), ...sm.days.map(d => el("th", "num", HZ(d))));
+    $("smileHead").replaceChildren(hr);
+    $("smileBody").replaceChildren(...sm.m.map((k, j) => [k, j]).filter(([k]) => Number.isInteger(k)).map(([k, j]) => {
+      const tr = el("tr");
+      tr.append(td(sigmaLabel(k)), ...sm.days.map((d, i) => td(ph.iv[i][j] > 0 ? usd(ph.iv[i][j]) : "–", "num")));
+      return tr;
+    }), (() => { const tr = el("tr", "total"); tr.append(td("normal"), ...ph.sd.map(v => td(usd(v), "num"))); return tr; })());
   }
 
   /* ---------- screener ---------- */
@@ -1269,7 +1938,7 @@ footer p { margin: 0; }
   let lastWidth = 0;
   new ResizeObserver(() => {
     const w = Math.floor(document.querySelector(".wrap").clientWidth);
-    if (w && w !== lastWidth) { lastWidth = w; if (bot && hist) { renderChart(); renderCost(); renderHedge(); } }
+    if (w && w !== lastWidth) { lastWidth = w; if (bot && hist) { renderChart(); renderCost(); renderHedge(); safeModel(); } }
   }).observe(document.querySelector(".wrap"));
 
   buildTfs();
