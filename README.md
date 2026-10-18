@@ -1,7 +1,8 @@
 # Hyperliquid Long/Short-Bot
 
 Ein beta-neutraler Long/Short-Bot für Hyperliquid und eine Seite, die zeigt, was er tut: Kontowert als Kerzen, was er
-heute gehandelt hat und warum, was er hält, Hedge und VaR, und wie der Screener die Longs gewählt hat.
+heute gehandelt hat und warum, was er hält, Hedge und VaR, wie sein Risikomodell das Buch sieht, und wie der Screener
+die Longs gewählt hat.
 
 - **Longs:** Ein Screener wählt einmal am Tag die 7 Token mit dem besten Score aus Holder-Rendite (35 %), Revenue- und
   Fee-Rendite (je 15 %), Momentum gegen ETH und Cashflow-Wachstum (je 10 %), Katalysatoren (Releases auf GitHub,
@@ -24,6 +25,17 @@ heute gehandelt hat und warum, was er hält, Hedge und VaR, und wie der Screener
   über der üblichen, wird das Buch kleiner (bis auf die Hälfte, nie größer). Liegt das gehaltene Buch mehr als 10 %
   neben seiner Zielgröße, bringt er es als Ganzes dorthin; darunter entscheidet die Kostenregel. VaR und ES kommen aus
   gefilterter historischer Simulation: jeder Tag des Jahres, auf die Volatilität von morgen umgerechnet.
+- **Risikomodell auf der Seite:** Die Verteilung eines Tages, also das Jahr des heutigen Buchs bei der Volatilität
+  von morgen, gegen die Normalverteilung, logarithmisch oder linear, mit Schiefe, Kurtosis und den Tagen jenseits von
+  2σ und 3σ. Der Volatilitäts-Smile aus GARCH: Optionen auf das Ergebnis des Buchs über einen Tag (exakt), eine Woche
+  und einen Monat (auf 10.000 Pfaden: die Tage des Jahres als Schocks, GARCH für die Volatilität danach), in die
+  Volatilität einer Normalverteilung mit demselben Preis zurückgerechnet (Bachelier); eine Normalverteilung mit
+  derselben Varianz wäre waagrecht. Er startet bei der Volatilität von morgen und zum Vergleich so ruhig bzw. unruhig,
+  wie dieselbe Prognose an den ruhigsten und unruhigsten 10 % der Tage des Jahres war. Und die Regime-Fläche aus dem
+  Hidden-Markov-Modell, drehbar in 3D: für jeden Abschnitt des Jahres die Verteilung eines Tages als Mischung beider
+  Regime, gewichtet mit der Wahrscheinlichkeit des unruhigen Regimes im Rückblick (Forward-Backward), vorne morgen,
+  wie der Bot es erwartet; jeder Tag als Punkt, groß die mehr als 2σ neben der Erwartung des Morgens. Alle Zahlen gibt
+  es auch als Tabellen.
 - **Rebalancing:** kein fester Takt. Bei jeder Prüfung vergleicht der Bot die Risikokosten der Abweichung vom Ziel,
   `Risikoaversion ÷ (2 × Kontowert) × σ²`, mit den Handelskosten, die er vorher auf dem Live-Orderbuch simuliert
   (Implementation Shortfall nach Perold, Methode aus
@@ -38,7 +50,7 @@ heute gehandelt hat und warum, was er hält, Hedge und VaR, und wie der Screener
 - `bot/` – der Bot, im Paper-Modus nur Python-Standardbibliothek (3.11+)
   - `screener.py` – Auswahl der Longs aus Hyperliquid, DefiLlama, GitHub und Snapshot
   - `hedge.py` – Auswahl der Shorts: Minimum-Varianz-Hedge für den Long-Basket
-  - `risk.py` – Sprunglimits, GARCH, Hidden-Markov-Modell, VaR und ES mit Fat Tails
+  - `risk.py` – Sprunglimits, GARCH, Hidden-Markov-Modell, VaR und ES mit Fat Tails, Volatilitäts-Smile
   - `model.py` – Zielbuch mit Sprunglimits, Entscheidungsregel
   - `costs.py` – Kostensimulation auf dem Orderbuch und realisierte Kosten
   - `broker.py` – Paper- und Live-Konto, Ausführung

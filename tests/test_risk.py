@@ -78,7 +78,128 @@ class Tails(unittest.TestCase):
         self.assertAlmostEqual(r["99"]["es_hist"] / r["99"]["es_param"], 1.0, delta=0.12)
 
 
+def t3(rnd):
+    """Student t with 3 degrees of freedom, scaled to unit variance: fat tails."""
+    z = rnd.gauss(0, 1)
+    c = sum(rnd.gauss(0, 1) ** 2 for _ in range(3))
+    return z / math.sqrt(c / 3) / math.sqrt(3)
+
+
+class Shape(unittest.TestCase):
+    def test_a_normal_sample_looks_normal(self):
+        rnd = random.Random(21)
+        s = risk.shape([rnd.gauss(0, 1) for _ in range(20000)])
+        self.assertAlmostEqual(s["skew"], 0.0, delta=0.05)
+        self.assertAlmostEqual(s["kurt"], 3.0, delta=0.15)
+        self.assertAlmostEqual(s["normal"]["3"], 20000 * 0.0013499, delta=0.01)
+        for k in ("-3", "3"):
+            self.assertAlmostEqual(s["beyond"][k], s["normal"]["3"], delta=4 * math.sqrt(s["normal"]["3"]))
+
+    def test_fat_tails_and_skew_show(self):
+        rnd = random.Random(22)
+        fat = risk.shape([t3(rnd) for _ in range(20000)])
+        self.assertGreater(fat["kurt"], 5.0)
+        self.assertGreater(fat["beyond"]["3"] + fat["beyond"]["-3"], 2 * fat["normal"]["3"])
+        right = risk.shape([math.exp(rnd.gauss(0, 0.5)) for _ in range(20000)])
+        self.assertGreater(right["skew"], 1.0)
+        self.assertGreater(right["beyond"]["2"], right["beyond"]["-2"])
+
+
+class Smile(unittest.TestCase):
+    def test_the_normal_volatility_comes_back_from_its_price(self):
+        for F, K, s in ((0.0, -2.0, 1.5), (100.0, 130.0, 12.0), (5.0, 5.0, 0.3)):
+            for call in (True, False):
+                self.assertAlmostEqual(risk.implied_normal(F, K, risk.bachelier(F, K, s, call), call), s, places=7)
+        self.assertIsNone(risk.implied_normal(0.0, -3.0, 0.0, False))      # nothing below the strike
+
+    def test_a_normal_book_without_clustering_has_no_smile(self):
+        rnd = random.Random(23)
+        z = [rnd.gauss(0, 1) for _ in range(5000)]
+        sm = risk.smile(z, 0.0, 0.0, 1.0, {"flat": 1.0}, paths=6000)
+        ph, atm = sm["phases"]["flat"], sm["m"].index(0.0)
+        self.assertAlmostEqual(sm["long"], 1.0, delta=0.04)
+        for d, sd, row in zip(sm["days"], ph["sd"], ph["iv"]):
+            self.assertAlmostEqual(sd, 1.0, delta=0.04)
+            self.assertAlmostEqual(row[atm] / sd, 1.0, delta=0.03, msg=d)   # the paths agree with the forecast
+            near = [iv for k, iv in zip(sm["m"], row) if abs(k) <= (3 if d == 1 else 2)]
+            self.assertLess(max(near) / min(near), 1.08, d)              # flat, within the noise of the sample
+
+    def test_a_strike_with_too_few_paths_beyond_it_gets_no_price(self):
+        rnd = random.Random(28)
+        z = [rnd.gauss(0, 1) for _ in range(1000)]
+        sm = risk.smile(z, 0.0, 0.0, 1.0, {"x": 1.0}, days=(1, 7), paths=300)
+        at = {k: i for i, k in enumerate(sm["m"])}
+        one, week = sm["phases"]["x"]["iv"]
+        self.assertIsNone(week[at[3.0]])
+        self.assertIsNone(week[at[-3.0]])
+        self.assertIsNotNone(week[at[0.0]])
+        self.assertIsNotNone(one[at[3.0]])                               # one day is exact, no paths needed
+
+    def test_fat_tails_bend_the_line_into_a_smile_that_flattens_with_the_horizon(self):
+        rnd = random.Random(24)
+        z = [t3(rnd) for _ in range(3000)]
+        sm = risk.smile(z, 0.0, 0.0, 1.0, {"x": 1.0}, days=(1, 30), paths=6000)
+        one, month = sm["phases"]["x"]["iv"]
+        at = {k: i for i, k in enumerate(sm["m"])}
+        wings = lambda row: (row[at[-2.0]] + row[at[2.0]]) / 2 / row[at[0.0]]     # noqa: E731
+        self.assertGreater(wings(one), 1.08)
+        self.assertLess(wings(month), wings(one))
+
+    def test_skew_tilts_the_smile(self):
+        rnd = random.Random(25)
+        z = [math.exp(rnd.gauss(0, 0.6)) for _ in range(3000)]
+        m = statistics.mean(z)
+        sm = risk.smile([v - m for v in z], 0.0, 0.0, 1.0, {"x": 1.0}, days=(1,))
+        row, at = sm["phases"]["x"]["iv"][0], {k: i for i, k in enumerate(sm["m"])}
+        self.assertGreater(row[at[2.0]], 1.2 * row[at[0.0]])             # big gains: the right wing is higher
+        self.assertLess(row[at[-1.0]], row[at[0.0]])                     # losses are bounded: the left side falls
+        self.assertIsNone(row[at[-3.0]])                                 # and nothing lies 3 sd below the mean
+
+    def test_the_level_returns_to_the_long_run_across_horizons(self):
+        rnd = random.Random(26)
+        z = [rnd.gauss(0, 1) for _ in range(2000)]
+        sm = risk.smile(z, 0.1, 0.85, 1.0, {"calm": 0.25, "turbulent": 4.0}, paths=4000)
+        calm, wild = sm["phases"]["calm"]["sd"], sm["phases"]["turbulent"]["sd"]
+        self.assertLess(calm[0], calm[1])
+        self.assertLess(calm[1], calm[2])
+        self.assertGreater(wild[0], wild[1])
+        self.assertGreater(wild[1], wild[2])
+        fit = {"a": 0.1, "b": 0.85, "v_long": 1.0, "next": 4.0}
+        self.assertAlmostEqual(wild[2] ** 2 / risk.garch_ahead(fit, 30), 1.0, delta=0.05)
+        self.assertAlmostEqual(sm["phases"]["calm"]["start"], 0.5)
+        # the paths agree with the forecast: the month's at-the-money volatility near its sd
+        atm = sm["m"].index(0.0)
+        self.assertAlmostEqual(sm["phases"]["turbulent"]["iv"][2][atm] / wild[2], 1.0, delta=0.06)
+
+    def test_the_same_inputs_give_the_same_smile(self):
+        rnd = random.Random(27)
+        z = [t3(rnd) for _ in range(400)]
+        args = (z, 0.06, 0.9, 1.0, {"today": 1.3})
+        self.assertEqual(risk.smile(*args, paths=500), risk.smile(*args, paths=500))
+        self.assertIsNone(risk.smile(z[:20], 0.06, 0.9, 1.0, {"today": 1.0}))
+
+
 class Regimes(unittest.TestCase):
+    def test_what_the_model_expected_each_morning_comes_from_the_day_before(self):
+        x, _ = regime_series(800)
+        fit = risk.hmm_fit(x)
+        P, f, pred = fit["P"], fit["filtered"], fit["pred"]
+        self.assertEqual(len(pred), len(x))
+        self.assertAlmostEqual(pred[0], 0.5 * P[0][1] + 0.5 * P[1][1])
+        for t in (1, 100, 799):
+            self.assertAlmostEqual(pred[t], (1 - f[t - 1]) * P[0][1] + f[t - 1] * P[1][1])
+
+    def test_in_hindsight_the_regimes_are_clearer_and_today_agrees(self):
+        x, states = regime_series(1500, seed=9)
+        fit = risk.hmm_fit(x)
+        f, sm = fit["filtered"], fit["smoothed"]
+        self.assertAlmostEqual(sm[-1], f[-1], places=12)                # the last day knows nothing more
+        right = lambda ps: sum((p > 0.5) == (s == 1) for p, s in zip(ps, states)) / len(states)  # noqa: E731
+        switches = lambda ps: sum((a > 0.5) != (b > 0.5) for a, b in zip(ps, ps[1:]))       # noqa: E731
+        self.assertGreaterEqual(right(sm), right(f))
+        self.assertGreater(right(sm), 0.9)
+        self.assertLess(switches(sm), switches(f))
+
     def test_it_finds_the_calm_and_the_turbulent_state(self):
         x, states = regime_series(2500)
         fit = risk.hmm_fit(x)
@@ -173,6 +294,17 @@ class Book(unittest.TestCase):
         g = risk.garch_fit(pnl, ref_mask=mask)
         self.assertAlmostEqual(g["v_ref"], statistics.mean(g["h"][-89:]))
 
+    def test_a_day_left_out_keeps_the_dates_of_the_others(self):
+        snap = snap_with(["AAA"], days=400)
+        snap["coins"]["ETH"]["closes"][-(10 * 3 + 1)] = None              # the close that ended the day 10 days ago
+        pnl, _, ages = risk.pro_forma(snap, {"AAA": 1000.0, "ETH": -1200.0}, days=365, span=True, ages=True)
+        self.assertEqual(len(pnl), len(ages))
+        self.assertEqual(len(pnl), 363)                                    # that day and the next are gone
+        self.assertEqual(ages[-1], 0)
+        self.assertEqual(ages[0], 364)                                     # the oldest day is still a year back
+        self.assertNotIn(10, ages)
+        self.assertNotIn(9, ages)
+
     def test_one_missing_close_does_not_shorten_the_real_days(self):
         snap = snap_with(["NEW"], days=400)
         v = snap["coins"]["NEW"]["closes"]
@@ -198,6 +330,20 @@ class Book(unittest.TestCase):
         snap["coins"]["NEW"]["closes"][:-120 * 3] = [None] * (400 * 3 - 120 * 3)
         o = risk.book_outlook(snap, {"NEW": 1000.0, "ETH": -1200.0}, days=365)
         self.assertGreater(math.sqrt(o["ref"] / o["var"]), 0.8)
+
+    def test_the_outlook_carries_what_the_page_draws(self):
+        snap = snap_with(["AAA"], days=400, seed=12)
+        o = risk.book_outlook(snap, {"AAA": 1000.0, "ETH": -1200.0}, days=365)
+        self.assertEqual(o["t_end"], 400 * 3 * 8 * 3600000)               # the last close of the grid that ends now
+        self.assertEqual(len(o["pnl"]), 365)
+        self.assertEqual(len(o["regime"]["pred"]), 365)
+        self.assertEqual(o["ages"], list(range(364, -1, -1)))
+        lv = o["levels"]
+        self.assertLessEqual(lv["calm"], lv["turbulent"])
+        sm = risk.book_smile(o, days=(1, 7), paths=800)
+        self.assertEqual(sorted(sm["phases"]), ["calm", "today", "turbulent"])
+        self.assertAlmostEqual(sm["phases"]["today"]["start"], math.sqrt(o["var"]))
+        self.assertEqual(len(sm["phases"]["today"]["iv"][1]), len(risk.STRIKES))
 
     def test_a_coin_listed_later_moves_with_its_beta_before(self):
         snap = snap_with(["AAA", "NEW"])

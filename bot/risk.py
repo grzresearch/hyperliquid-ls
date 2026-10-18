@@ -16,11 +16,17 @@ Everything here works on daily numbers taken from the bot's 8-hour closes and ne
            tomorrow's. VaR and ES keep the fat tails of the year without assuming a distribution, at today's level.
   regime   a two-state Gaussian hidden Markov model (calm, turbulent) on the same PnL: the probability of each state
            today and tomorrow, and the volatility each state stands for.
+  smile    the volatility smile GARCH and the fat tails imply for the book over a day, a week and a month: options on
+           the book's PnL priced on simulated paths and turned back into the normal volatility with the same price.
 """
+import bisect
 import math
+import random
 import statistics
 
 NORMAL = statistics.NormalDist()
+STRIKES = [k / 4 for k in range(-12, 13)]          # -3 to +3 standard deviations of the horizon's PnL
+MIN_TAIL = 40                                      # paths beyond a strike before the smile prices it
 
 
 def _mean(v):
@@ -52,10 +58,12 @@ def filled(r, eth):
     return [a if a is not None or e is None else b * e for a, e in zip(r, eth)]
 
 
-def pro_forma(snap, exposure, days=365, skip=0, span=False):
+def pro_forma(snap, exposure, days=365, skip=0, span=False, ages=False):
     """Daily PnL in USD that the book `exposure` (USD per coin) would have made on each of the last `days` days,
     the last day ending `skip` 8h steps before the last close. Days before a coin was listed: see filled().
-    span=True also returns, per day, whether every coin with at least 5 % of the book had its own price change."""
+    span=True also returns, per day, whether every coin with at least 5 % of the book had its own price change;
+    with ages=True as well, how many days before the grid's last day each day ended (a day with a missing close is
+    left out, so the days are not always consecutive)."""
     per, C = int(snap.get("perDay", 3)), snap["coins"]
     cut = lambda v: v[:len(v) - skip] if skip else v        # noqa: E731
     eth = daily_returns(cut(C["ETH"]["closes"]), per, days)
@@ -69,12 +77,15 @@ def pro_forma(snap, exposure, days=365, skip=0, span=False):
         if abs(usd) >= 0.05 * gross:
             own.append([a is not None for a in r])
         rets[c] = filled(r, eth)
-    pnl, mask = [], []
+    pnl, mask, age = [], [], []
     for i, e in enumerate(eth):
         if e is None or any(r[i] is None for r in rets.values()):
             continue
         pnl.append(sum(exposure[c] * r[i] for c, r in rets.items()))
         mask.append(all(o[i] for o in own))
+        age.append(len(eth) - 1 - i)
+    if span and ages:
+        return pnl, mask, age
     return (pnl, mask) if span else pnl
 
 
@@ -210,12 +221,12 @@ def garch_ahead(fit, days):
 def tail_risk(x, fit, sigma=None, levels=(0.95, 0.99)):
     """VaR and ES of tomorrow as positive losses, from every day of x divided by its GARCH volatility and multiplied
     by tomorrow's, `sigma` (filtered historical simulation), next to what a normal distribution with the same
-    volatility says. Also the rescaled days themselves (for a histogram)."""
+    volatility says. Also the rescaled days themselves (for a histogram) and their shape (shape())."""
     sig = sigma if sigma is not None else math.sqrt(fit["next"])
     z = sorted((v - fit["mean"]) / math.sqrt(h) for v, h in zip(x, fit["h"]) if h > 0)
     if not z:
         return None
-    out = {"sigma": sig, "samples": [v * sig for v in z], "n": len(z)}
+    out = {"sigma": sig, "samples": [v * sig for v in z], "n": len(z), "shape": shape(z)}
     for p in levels:
         k = max(1, round((1 - p) * len(z)))
         tail = z[:k]
@@ -225,13 +236,30 @@ def tail_risk(x, fit, sigma=None, levels=(0.95, 0.99)):
     return out
 
 
+def shape(z):
+    """How far the standardized days z are from normal: skewness, kurtosis (3 for a normal distribution) and how many
+    lie beyond 2 and 3 standard deviations on each side, next to how many a normal distribution would put there."""
+    n, m = len(z), _mean(z)
+    sd = math.sqrt(sum((v - m) ** 2 for v in z) / n)
+    out = {"n": n, "skew": 0.0, "kurt": 3.0, "beyond": {}, "normal": {}}
+    if sd > 0:
+        out["skew"] = sum(((v - m) / sd) ** 3 for v in z) / n
+        out["kurt"] = sum(((v - m) / sd) ** 4 for v in z) / n
+    for k in (2, 3):
+        out["beyond"][f"-{k}"] = sum(v < -k for v in z)
+        out["beyond"][f"{k}"] = sum(v > k for v in z)
+        out["normal"][f"{k}"] = n * (1 - NORMAL.cdf(k))         # on each side
+    return out
+
+
 # ---------- regimes: two-state Gaussian hidden Markov model ----------
 def hmm_fit(x, iters=300, tol=1e-7, clip=5.0, ref_mask=None):
     """Two-state Gaussian hidden Markov model by Baum-Welch. State 0 is the calm one (lower volatility). The states
     are fitted on x with its jumps clipped (a single jump would otherwise become a state of its own); the
     probabilities then run over x as it is. Returns means, sds, the transition matrix P (P[i][j]: from i to j), the
-    probability of the turbulent state for every day given the data up to it (filtered), today's and tomorrow's
-    state probabilities and tomorrow's variance."""
+    probability of the turbulent state for every day given the data up to it (filtered), given the data before it
+    (pred, what the model expected that morning) and given all of it (smoothed, hmm_smooth), the variance it expected
+    for each day (pvar), today's and tomorrow's state probabilities and tomorrow's variance."""
     raw = list(x)
     x = clipped(raw, clip) if clip else raw
     n = len(x)
@@ -293,8 +321,9 @@ def hmm_fit(x, iters=300, tol=1e-7, clip=5.0, ref_mask=None):
     if sg[0] > sg[1]:                      # state 0 is the calm one
         mu, sg, P = mu[::-1], sg[::-1], [P[1][::-1], P[0][::-1]]
     fit = {"mu": mu, "sd": sg, "P": P}
-    prob, filtered, predicted = 0.5, [], []
+    prob, filtered, pred, predicted = 0.5, [], [], []
     for v in raw:                          # filtered over the data as it is, jumps included
+        pred.append((1 - prob) * P[0][1] + prob * P[1][1])
         predicted.append(hmm_variance(fit, prob))
         prob = hmm_step(fit, prob, v)
         filtered.append(prob)
@@ -302,9 +331,38 @@ def hmm_fit(x, iters=300, tol=1e-7, clip=5.0, ref_mask=None):
     ahead = [today[0] * P[0][k] + today[1] * P[1][k] for k in (0, 1)]
     mean_next = ahead[0] * mu[0] + ahead[1] * mu[1]
     var_next = sum(ahead[k] * (sg[k] ** 2 + mu[k] ** 2) for k in (0, 1)) - mean_next ** 2
-    return {"mu": mu, "sd": sg, "P": P, "filtered": filtered, "today": today, "ahead": ahead,
-            "next": var_next, "stay": [P[0][0], P[1][1]],
+    return {"mu": mu, "sd": sg, "P": P, "filtered": filtered, "pred": pred, "smoothed": hmm_smooth(fit, raw),
+            "today": today, "ahead": ahead, "next": var_next, "stay": [P[0][0], P[1][1]], "pvar": predicted,
             "v_ref": usual(predicted[30:], ref_mask[30:] if ref_mask else None) if n > 30 else _mean(predicted)}
+
+
+def hmm_smooth(fit, x, prob=0.5):
+    """The probability of the turbulent state on each day of x given all of x (forward-backward): the regime the
+    model sees each day in hindsight. Steadier than the filtered probability, which knows only the days up to it;
+    on the last day the two agree. prob: the turbulent state's probability the day before x starts."""
+    mu, sg, P = fit["mu"], fit["sd"], fit["P"]
+
+    def like(v):                           # both states' densities over the larger one, as in hmm_step
+        lg = [-0.5 * ((v - mu[k]) / sg[k]) ** 2 - math.log(sg[k]) for k in (0, 1)]
+        top = max(lg)
+        return [math.exp(g - top) for g in lg]
+
+    fwd, a = [], [1 - prob, prob]
+    for v in x:
+        e = like(v)
+        u = [(a[0] * P[0][k] + a[1] * P[1][k]) * e[k] for k in (0, 1)]
+        s = sum(u) or 1e-300
+        a = [u[0] / s, u[1] / s]
+        fwd.append(a)
+    out, back = [0.0] * len(x), [1.0, 1.0]
+    for t in range(len(x) - 1, -1, -1):
+        u = [fwd[t][k] * back[k] for k in (0, 1)]
+        out[t] = u[1] / (sum(u) or 1e-300)
+        e = like(x[t])
+        nb = [sum(P[j][k] * e[k] * back[k] for k in (0, 1)) for j in (0, 1)]
+        s = sum(nb) or 1e-300
+        back = [nb[0] / s, nb[1] / s]
+    return out
 
 
 def hmm_step(fit, prob, v):
@@ -333,29 +391,42 @@ def outlook(pnl, mask=None):
     see pro_forma and usual). The tails come from the year at tomorrow's volatility. Too short or flat a history
     gives a neutral outlook: var 0, nothing else."""
     if len(pnl) < 30 or statistics.pvariance(pnl) <= 0:
-        return {"var": 0.0, "ref": 0.0, "days": len(pnl), "tails": None, "garch": None, "regime": None}
+        return {"var": 0.0, "ref": 0.0, "days": len(pnl), "pnl": list(pnl), "tails": None, "garch": None,
+                "regime": None}
     g = garch_fit(pnl, ref_mask=mask)
     hm = hmm_fit(pnl, ref_mask=mask)
     var = (g["next"] + hm["next"]) / 2 if hm else g["next"]
     ref = (g["v_ref"] + hm["v_ref"]) / 2 if hm else g["v_ref"]
-    out = {"var": var, "ref": ref, "days": len(pnl), "tails": tail_risk(pnl, g, sigma=math.sqrt(var)),
-           "garch": {"a": g["a"], "b": g["b"], "next": g["next"], "ref": g["v_ref"]}, "regime": None}
+    # what the same forecast said on each day of the year: its calm and its turbulent tenth, for the smile
+    said = sorted((a + b) / 2 for a, b in zip(g["h"], hm["pvar"])) if hm else sorted(g["h"])
+    out = {"var": var, "ref": ref, "days": len(pnl), "pnl": list(pnl), "tails": tail_risk(pnl, g, sigma=math.sqrt(var)),
+           "garch": {"a": g["a"], "b": g["b"], "next": g["next"], "ref": g["v_ref"], "long": g["v_long"]},
+           "levels": {"calm": said[(len(said) - 1) // 10], "turbulent": said[(9 * (len(said) - 1)) // 10]},
+           "regime": None}
     if hm:
-        out["regime"] = {"turbulent": hm["today"][1], "tomorrow": hm["ahead"][1], "sd": hm["sd"], "stay": hm["stay"],
-                         "next": hm["next"], "recent": [round(p, 3) for p in hm["filtered"][-90:]]}
+        out["regime"] = {"turbulent": hm["today"][1], "tomorrow": hm["ahead"][1], "sd": hm["sd"], "mu": hm["mu"],
+                         "stay": hm["stay"], "next": hm["next"], "pred": hm["pred"], "filtered": hm["filtered"],
+                         "smoothed": hm["smoothed"], "recent": [round(p, 3) for p in hm["filtered"][-90:]]}
     return out
 
 
 def book_outlook(snap, book, days=365):
     """outlook() of a book on each of the daily grids its 8h closes allow (days ending at the last close, 8 and 16
     hours before), with variance and usual level averaged: a new close then moves the forecast by a third of a step,
-    not all of it. Regime and tails come from the grid that ends now, scaled to the averaged volatility."""
+    not all of it. Regime and tails come from the grid that ends now, scaled to the averaged volatility; t_end is
+    when that grid's last day ended (ms), ages how many days before it each of its days ended."""
     per = int(snap.get("perDay", 3))
-    views = [outlook(*pro_forma(snap, book, days, skip, span=True)) for skip in range(per)]
-    good = [v for v in views if v["var"] > 0]
+    views = []
+    for skip in range(per):
+        pnl, mask, age = pro_forma(snap, book, days, skip, span=True, ages=True)
+        views.append(dict(outlook(pnl, mask), ages=age))
+    good = [(skip, v) for skip, v in enumerate(views) if v["var"] > 0]
     if not good:
         return views[0]
-    now = good[0]                           # the grid that ends now, unless it had too little to say
+    skip, now = good[0]                     # the grid that ends now, unless it had too little to say
+    closes = len(snap["coins"]["ETH"]["closes"])
+    now["t_end"] = snap.get("t0", 0) + (closes - skip) * snap.get("step", 8 * 3600000)
+    good = [v for _, v in good]
     now["var"] = _mean([v["var"] for v in good])
     now["ref"] = _mean([v["ref"] for v in good])
     if now["tails"]:
@@ -366,3 +437,131 @@ def book_outlook(snap, book, days=365):
         for lvl in ("95", "99"):
             t[lvl] = {key: v * k for key, v in t[lvl].items()}
     return now
+
+
+# ---------- the volatility smile the model implies ----------
+def bachelier(F, K, s, call):
+    """Price of an option with strike K on a value that is normal with mean F and standard deviation s."""
+    u = F - K if call else K - F
+    if s <= 0:
+        return max(u, 0.0)
+    return u * NORMAL.cdf(u / s) + s * NORMAL.pdf(u / s)
+
+
+def implied_normal(F, K, price, call):
+    """The standard deviation at which bachelier() gives `price`; None where no volatility can (nothing beyond the
+    strike, or a price at or below the option's intrinsic value)."""
+    if not price > max(F - K if call else K - F, 0.0) + 1e-12 * (abs(F) + abs(K) + 1.0):
+        return None
+    lo, hi = 0.0, max(abs(F - K), price, 1e-9)
+    while bachelier(F, K, hi, call) < price:
+        hi *= 2
+    for _ in range(100):
+        mid = (lo + hi) / 2
+        if bachelier(F, K, mid, call) < price:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
+
+
+def _curve(price, F, sd, days, strikes):
+    """Implied normal volatility per day at F + k sd for each k in strikes, from price(K, call) on the out-of-the-money
+    side (puts below F, calls above)."""
+    row = []
+    for k in strikes:
+        K = F + k * sd
+        s = implied_normal(F, K, price(K, K >= F), K >= F)
+        row.append(s / math.sqrt(days) if s else None)
+    return row
+
+
+def smile(z, a, b, v_long, starts, days=(1, 7, 30), strikes=STRIKES, paths=10000, seed=7, clip=5.0):
+    """The volatility smile of the book's PnL over each horizon in `days` (trading days of 24 hours), starting from
+    each variance in `starts` ({name: variance}).
+
+    Each day draws one of the year's standardized days z (kernel-smoothed, so the tails do not end at the worst day
+    of the year) and multiplies it by the GARCH volatility, which then moves on with that shock as in garch_fit (a, b,
+    the long-run variance v_long; the shock clipped at `clip` like the fit and scaled so the variance follows the
+    GARCH forecast on average). One day needs no paths: it is a mixture of normals around the year's days.
+
+    An option on the horizon's PnL is priced at each strike (in standard deviations of that PnL from its mean, puts
+    below, calls above) and turned back into the normal volatility that gives the same price (Bachelier): a normal
+    distribution with the same variance is a flat line at sd, fat tails bend the curve into a smile, skew tilts it.
+    Volatilities are per day in USD (the horizon's divided by the square root of its days), so a falling or rising
+    sd across horizons is the term structure: the variance returning to its long-run level (long). A strike with
+    fewer than MIN_TAIL paths beyond it gets no price. The same random draws for every start, so the curves differ
+    only by where they start.
+
+    Returns {"m": strikes, "days": days, "long": sd, "phases": {name: {"start": sqrt(variance), "sd": [per day],
+    "iv": [[per strike]]}}}, or None without enough history."""
+    n = len(z)
+    if n < 30 or v_long <= 0:
+        return None
+    m = _mean(z)
+    vz = sum((v - m) ** 2 for v in z) / n
+    if vz <= 0:
+        return None
+    srt = sorted(z)
+    iqr = srt[(3 * n) // 4] - srt[n // 4]
+    bw = 0.9 * min(math.sqrt(vz), iqr / 1.34 if iqr > 0 else math.sqrt(vz)) * n ** -0.2     # Silverman
+    c = 1 / math.sqrt(1 + bw * bw / vz)          # smoothing must not add variance
+    zs, kb = [c * v for v in z], c * bw
+    cap = clip * clip
+    feed = _mean([min(v * v + kb * kb, cap) for v in zs])
+    e2 = _mean([v * v for v in zs]) + kb * kb       # a day's variance per unit of GARCH variance
+    w, T, p = v_long * (1 - a - b), max(days), a + b
+    # the level the curves return to, per day: GARCH's long-run variance with the fat tails of the days
+    out = {"m": list(strikes), "days": list(days), "long": math.sqrt(v_long * e2), "phases": {}}
+    for name, h0 in starts.items():
+        if not h0 or h0 <= 0:
+            continue
+        rng = random.Random(seed)
+        ends = {d: [] for d in days if d > 1}
+        for _ in range(paths if ends else 0):
+            h, total = h0, 0.0
+            for t in range(1, T + 1):
+                e = zs[int(rng.random() * n)] + kb * rng.gauss(0.0, 1.0)
+                total += math.sqrt(h) * e
+                h = w + b * h + a * h * min(e * e, cap) / feed
+                if t in ends:
+                    ends[t].append(total)
+        sds, ivs = [], []
+        for d in days:
+            # the horizon's standard deviation from the GARCH forecast itself, not from the paths: the strikes and
+            # the levels across horizons carry no simulation noise
+            sd = math.sqrt(e2 * sum(v_long + p ** k * (h0 - v_long) for k in range(d)))
+            if d == 1:
+                r = math.sqrt(h0)
+                mus, width = [r * v for v in zs], r * kb
+                F = _mean(mus)
+                price = lambda K, call, mus=mus, width=width: _mean([bachelier(u, K, width, call) for u in mus])  # noqa: E731
+            else:
+                v = sorted(ends[d])
+                N = len(v)
+                F = _mean(v)
+                pre = [0.0]
+                for x in v:
+                    pre.append(pre[-1] + x)
+
+                def price(K, call, v=v, N=N, pre=pre):
+                    j = bisect.bisect_left(v, K)          # paths below the strike
+                    if (N - j if call else j) < MIN_TAIL:
+                        return 0.0                        # too few paths out there to price it
+                    return (pre[N] - pre[j] - K * (N - j)) / N if call else (K * j - pre[j]) / N
+            sds.append(sd / math.sqrt(d))
+            ivs.append(_curve(price, F, sd, d, strikes) if sd > 0 else [None] * len(strikes))
+        out["phases"][name] = {"start": math.sqrt(h0), "sd": sds, "iv": ivs}
+    return out
+
+
+def book_smile(o, days=(1, 7, 30), paths=10000):
+    """smile() of a book's outlook o (book_outlook): from tomorrow's variance ("today") and, to compare, from what the
+    same forecast said on a calm and on a turbulent day of the year (its 10th and 90th percentile). None without
+    tails."""
+    t, g, lv = o.get("tails"), o.get("garch"), o.get("levels") or {}
+    if not t or not g or o.get("var", 0) <= 0 or t["sigma"] <= 0:
+        return None
+    z = [v / t["sigma"] for v in t["samples"]]
+    starts = {"today": o["var"], "calm": lv.get("calm"), "turbulent": lv.get("turbulent")}
+    return smile(z, g["a"], g["b"], g["long"], starts, days, paths=paths)

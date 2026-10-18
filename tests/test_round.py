@@ -241,11 +241,31 @@ class Rounds(unittest.TestCase):
         cap = book["jump_loss"] * 10000.0 / book["jumps"]["AAA"]["down"]       # the account before the first trades
         self.assertLessEqual(aaa["target"], cap * 1.0001)
         self.assertTrue(any(line.startswith("Sprunglimits: AAA") for line in self.log.lines))
-        for key in ("95", "99", "regime", "size", "risk_scale", "ref_sigma", "samples"):
+        for key in ("95", "99", "regime", "size", "risk_scale", "ref_sigma", "samples", "shape", "pnl", "t_end"):
             self.assertIn(key, r)
         self.assertGreaterEqual(r["99"]["es_hist"], r["99"]["hist"])
         self.assertTrue(0.5 <= r["size"] <= 1.0)
         self.assertTrue(0.0 <= r["regime"]["turbulent"] <= 1.0)
+        # what the page draws: the year of the book, the regime of every day and the smile, rounded for the page
+        self.assertEqual(len(r["pnl"]), r["days"])
+        self.assertEqual(len(r["ages"]), r["days"])
+        self.assertEqual(len(r["regime"]["pred"]), r["days"])
+        self.assertEqual(len(r["regime"]["smoothed"]), r["days"])
+        self.assertNotIn("filtered", r["regime"])                         # the page shows only its last 90 days
+        self.assertTrue(all(round(v, 2) == v for v in r["samples"] + r["pnl"]))
+        self.assertEqual(sorted(r["smile"]["phases"]), ["calm", "today", "turbulent"])
+        self.assertGreater(r["smile"]["long"], 0)
+        today = r["smile"]["phases"]["today"]
+        self.assertEqual(len(today["iv"]), len(r["smile"]["days"]))
+        self.assertAlmostEqual(today["start"], r["sigma"], delta=0.01)
+
+    def test_a_smile_that_fails_costs_neither_the_round_nor_the_var(self):
+        with mock.patch.object(M.risk, "book_smile", side_effect=ValueError("bad")):
+            self.bot().round()
+        r = self.published()["risk"]
+        self.assertIsNone(r["smile"])
+        self.assertIn("99", r)
+        self.assertTrue(any(line.startswith("Volatilitäts-Smile nicht berechnet") for line in self.log.lines))
 
     def test_a_held_position_above_its_new_jump_limit_is_cut_back_at_once(self):
         self.bot().round()
