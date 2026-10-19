@@ -1,4 +1,4 @@
-"""Execution costs as implementation shortfall, after github.com/gelatotrade/implementation-shortfall-hyperliquid.
+"""Execution costs as implementation shortfall, after github.com/grzresearch/implementation-shortfall-hyperliquid.
 
 The book walk and the decomposition follow that repository's simulator (Modul 4) and decomposer (Modul 5):
 
