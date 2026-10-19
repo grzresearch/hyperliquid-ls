@@ -39,7 +39,7 @@ die Longs gewählt hat.
 - **Rebalancing:** kein fester Takt. Bei jeder Prüfung vergleicht der Bot die Risikokosten der Abweichung vom Ziel,
   `Risikoaversion ÷ (2 × Kontowert) × σ²`, mit den Handelskosten, die er vorher auf dem Live-Orderbuch simuliert
   (Implementation Shortfall nach Perold, Methode aus
-  [implementation-shortfall-hyperliquid](https://github.com/gelatotrade/implementation-shortfall-hyperliquid)).
+  [implementation-shortfall-hyperliquid](https://github.com/grzresearch/implementation-shortfall-hyperliquid)).
   Er handelt nur, was mehr Risiko abbaut, als es kostet. Die Risikokosten rechnet er mit der Volatilität von morgen:
   In unruhigen Phasen handelt er früher zurück, in ruhigen lässt er mehr laufen.
 - **Ausführung:** zuerst als Maker (Post-Only), der Rest nach dem Maker-Fenster als IOC mit Preisgrenze. Nach jedem
