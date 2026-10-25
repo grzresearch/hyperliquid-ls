@@ -1,8 +1,26 @@
 # Hyperliquid Long/Short-Bot
 
+[![Bot und Seite](https://github.com/grzresearch/hyperliquid-ls/actions/workflows/pages.yml/badge.svg)](https://github.com/grzresearch/hyperliquid-ls/actions/workflows/pages.yml)
+
 Ein beta-neutraler Long/Short-Bot für Hyperliquid und eine Seite, die zeigt, was er tut: Kontowert als Kerzen, was er
 heute gehandelt hat und warum, was er hält, Hedge und VaR, wie sein Risikomodell das Buch sieht, und wie der Screener
 die Longs gewählt hat.
+
+Der öffentliche Paper-Bot läuft alle 15 Minuten auf GitHub Actions. Seine Seite mit Positionen, Trades und Ergebnis:
+**https://grzresearch.github.io/hyperliquid-ls/**
+
+## Inhalt
+
+- [Funktionsweise](#funktionsweise)
+- [Installation](#installation)
+- [Nutzung](#nutzung)
+- [Auf GitHub](#auf-github)
+- [Testnet oder Mainnet](#testnet-oder-mainnet)
+- [Backtest](#backtest)
+- [Tests](#tests)
+- [Projektstruktur](#projektstruktur)
+
+## Funktionsweise
 
 - **Longs:** Ein Screener wählt einmal am Tag die 7 Token mit dem besten Score aus Holder-Rendite (35 %), Revenue- und
   Fee-Rendite (je 15 %), Momentum gegen ETH und Cashflow-Wachstum (je 10 %), Katalysatoren (Releases auf GitHub,
@@ -45,22 +63,29 @@ die Longs gewählt hat.
 - **Ausführung:** zuerst als Maker (Post-Only), der Rest nach dem Maker-Fenster als IOC mit Preisgrenze. Nach jedem
   Trade vergleicht er die simulierten mit den tatsächlichen Kosten.
 
-## Dateien
+## Installation
 
-- `bot/` – der Bot, im Paper-Modus nur Python-Standardbibliothek (3.11+)
-  - `screener.py` – Auswahl der Longs aus Hyperliquid, DefiLlama, GitHub und Snapshot
-  - `hedge.py` – Auswahl der Shorts: Minimum-Varianz-Hedge für den Long-Basket
-  - `risk.py` – Sprunglimits, GARCH, Hidden-Markov-Modell, VaR und ES mit Fat Tails, Volatilitäts-Smile
-  - `model.py` – Zielbuch mit Sprunglimits, Entscheidungsregel
-  - `costs.py` – Kostensimulation auf dem Orderbuch und realisierte Kosten
-  - `broker.py` – Paper- und Live-Konto, Ausführung
-  - `report.py` – Verlauf (Kontowert je Minute, Trades, Prüfungen) und Stand für die Seite
-- `config/bot.paper.toml` – Konfiguration des öffentlichen Paper-Bots
-- `config/bot.example.toml` – Vorlage für einen eigenen Lauf
-- `web/index.html` – die Seite; Kurse kommen live per WebSocket von Hyperliquid, der Rest aus `data/bot.json` und `data/history.json`
-- `.github/workflows/pages.yml` – lässt den Paper-Bot alle 15 Minuten eine Runde laufen und veröffentlicht danach die Seite
-- `backtest/` – misst die Faktoren, die Varianten der Short-Seite und die Risiko-Schicht auf einem Jahr Daten;
-  Ergebnis und Methode in `backtest/README.md`
+Python 3.11 oder neuer. Im Paper-Modus braucht der Bot nur die Standardbibliothek; für Testnet und Mainnet kommt das
+Hyperliquid-SDK dazu (siehe [Testnet oder Mainnet](#testnet-oder-mainnet)).
+
+```sh
+git clone https://github.com/grzresearch/hyperliquid-ls.git
+cd hyperliquid-ls
+```
+
+## Nutzung
+
+Alle Befehle laufen im Wurzelordner des Repos.
+
+```sh
+python3 -m bot --config config/bot.paper.toml --plan         # nur rechnen und zeigen, was er handeln würde
+python3 -m bot --config config/bot.paper.toml --once --site site/data
+cp web/* site/ && python3 -m http.server -d site             # die Seite mit diesem Stand
+```
+
+Ohne `--once` läuft er weiter und prüft jede Minute. Der Zustand liegt in `state/` (Paper-Konto, Verlauf, Screener).
+Mit `--restore https://grzresearch.github.io/hyperliquid-ls/data` übernimmt ein leerer Zustand den Stand der
+veröffentlichten Seite. Alle Optionen: `python3 -m bot --help`.
 
 ## Auf GitHub
 
@@ -72,18 +97,6 @@ mit dem neuen Stand. Den Screener sofort laufen lassen: Actions → „Bot und S
 
 Das Paper-Konto ist auf der Seite öffentlich sichtbar: Positionen, Trades und Ergebnis.
 
-## Lokal
-
-```sh
-python3 -m bot --config config/bot.paper.toml --plan         # nur rechnen und zeigen, was er handeln würde
-python3 -m bot --config config/bot.paper.toml --once --site site/data
-cp web/* site/ && python3 -m http.server -d site
-python3 -m backtest --cache backtest/cache                   # Backtest; das erste Mal lädt er rund 15 Minuten Daten
-python3 -m backtest.risk --cache backtest/cache              # Backtest der Risiko-Schicht (danach)
-```
-
-Ohne `--once` läuft er weiter und prüft jede Minute. Der Zustand liegt in `state/` (Paper-Konto, Verlauf, Screener).
-
 ## Testnet oder Mainnet
 
 Mit einer API-Wallet, die handeln, aber nicht abheben darf:
@@ -91,10 +104,62 @@ Mit einer API-Wallet, die handeln, aber nicht abheben darf:
 ```sh
 pip install -r requirements-bot.txt
 cp config/bot.example.toml bot.toml   # Adresse unter [account]; bot.toml bleibt lokal
-export HL_API_KEY=…            # Schlüssel der API-Wallet, nie in eine Datei im Repo
+export HL_API_KEY=…                   # Schlüssel der API-Wallet, nie in eine Datei im Repo
 python3 -m bot --mode testnet
 ```
 
-Eine Datei `STOP` im Arbeitsordner hält ihn vom Handeln ab. Tests: `python3 -m unittest discover -s tests`.
+Ohne `--config` liest der Bot `./bot.toml`. Eine Datei `STOP` im Arbeitsordner hält ihn vom Handeln ab.
+
+## Backtest
+
+```sh
+python3 -m backtest --cache backtest/cache                   # Backtest; das erste Mal lädt er rund 15 Minuten Daten
+python3 -m backtest.risk --cache backtest/cache              # Backtest der Risiko-Schicht (danach)
+```
+
+Er misst die Faktoren, die Varianten der Short-Seite und die Risiko-Schicht auf einem Jahr Daten. Die Ergebnisse
+landen in `backtest/report.json` und `backtest/risk.json`; Ergebnis und Methode stehen in
+[`backtest/README.md`](backtest/README.md).
+
+## Tests
+
+```sh
+python3 -m unittest discover -s tests
+```
+
+## Projektstruktur
+
+```
+.
+├── bot/                       # der Bot, im Paper-Modus nur Python-Standardbibliothek (3.11+)
+│   ├── __main__.py            # Einstieg (python3 -m bot): Konfiguration und Ablauf einer Runde
+│   ├── screener.py            # Auswahl der Longs aus Hyperliquid, DefiLlama, GitHub und Snapshot
+│   ├── hedge.py               # Auswahl der Shorts: Minimum-Varianz-Hedge für den Long-Basket
+│   ├── risk.py                # Sprunglimits, GARCH, Hidden-Markov-Modell, VaR und ES mit Fat Tails, Volatilitäts-Smile
+│   ├── model.py               # Zielbuch mit Sprunglimits, Entscheidungsregel
+│   ├── costs.py               # Kostensimulation auf dem Orderbuch und realisierte Kosten
+│   ├── broker.py              # Paper- und Live-Konto, Ausführung
+│   ├── hl.py                  # kleiner Client für die öffentliche Info-API von Hyperliquid (Standardbibliothek)
+│   └── report.py              # Verlauf (Kontowert je Minute, Trades, Prüfungen) und Stand für die Seite
+├── backtest/                  # Backtest der Faktoren, der Short-Seite und der Risiko-Schicht
+│   ├── __main__.py            # Faktoren und Short-Seite (python3 -m backtest)
+│   ├── risk.py                # Risiko-Schicht (python3 -m backtest.risk)
+│   ├── data.py                # historische Daten, auf der Platte zwischengespeichert
+│   ├── README.md              # Ergebnis und Methode
+│   ├── report.json            # Ergebnis von python3 -m backtest
+│   └── risk.json              # Ergebnis von python3 -m backtest.risk
+├── config/
+│   ├── bot.paper.toml         # Konfiguration des öffentlichen Paper-Bots
+│   └── bot.example.toml       # Vorlage für einen eigenen Lauf
+├── web/                       # die Seite: index.html, Web-Manifest und Icons
+├── tests/                     # Tests (unittest)
+├── .github/workflows/         # pages.yml: alle 15 Minuten eine Runde des Paper-Bots, danach die Seite
+└── requirements-bot.txt       # Hyperliquid-SDK für Testnet und Mainnet
+```
+
+Die Seite (`web/index.html`) bekommt die Kurse live per WebSocket von Hyperliquid, den Rest aus `data/bot.json` und
+`data/history.json`.
+
+---
 
 Rechenhilfe, keine Anlageberatung.
