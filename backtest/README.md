@@ -7,7 +7,7 @@ python3 -m backtest.risk --cache backtest/cache         # die Risiko-Schicht, br
 ```
 
 Die Ergebnisse landen in `backtest/report.json` und `backtest/risk.json`; die der Läufe vom 16. und 17.10.2026
-liegen bei. Die Gewichte und die Risiko-Einstellungen in `bot.paper.toml` stammen daraus.
+liegen bei. Die Gewichte und die Risiko-Einstellungen in `config/bot.paper.toml` stammen daraus.
 
 ## Ergebnis vom 16.10.2026
 

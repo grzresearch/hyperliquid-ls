@@ -55,9 +55,9 @@ die Longs gewählt hat.
   - `costs.py` – Kostensimulation auf dem Orderbuch und realisierte Kosten
   - `broker.py` – Paper- und Live-Konto, Ausführung
   - `report.py` – Verlauf (Kontowert je Minute, Trades, Prüfungen) und Stand für die Seite
-- `bot.paper.toml` – Konfiguration des öffentlichen Paper-Bots
-- `bot.example.toml` – Vorlage für einen eigenen Lauf
-- `index.html` – die Seite; Kurse kommen live per WebSocket von Hyperliquid, der Rest aus `data/bot.json` und `data/history.json`
+- `config/bot.paper.toml` – Konfiguration des öffentlichen Paper-Bots
+- `config/bot.example.toml` – Vorlage für einen eigenen Lauf
+- `web/index.html` – die Seite; Kurse kommen live per WebSocket von Hyperliquid, der Rest aus `data/bot.json` und `data/history.json`
 - `.github/workflows/pages.yml` – lässt den Paper-Bot alle 15 Minuten eine Runde laufen und veröffentlicht danach die Seite
 - `backtest/` – misst die Faktoren, die Varianten der Short-Seite und die Risiko-Schicht auf einem Jahr Daten;
   Ergebnis und Methode in `backtest/README.md`
@@ -75,9 +75,9 @@ Das Paper-Konto ist auf der Seite öffentlich sichtbar: Positionen, Trades und E
 ## Lokal
 
 ```sh
-python3 -m bot --config bot.paper.toml --plan                # nur rechnen und zeigen, was er handeln würde
-python3 -m bot --config bot.paper.toml --once --site site/data
-cp index.html manifest.webmanifest *.png site/ && python3 -m http.server -d site
+python3 -m bot --config config/bot.paper.toml --plan         # nur rechnen und zeigen, was er handeln würde
+python3 -m bot --config config/bot.paper.toml --once --site site/data
+cp web/* site/ && python3 -m http.server -d site
 python3 -m backtest --cache backtest/cache                   # Backtest; das erste Mal lädt er rund 15 Minuten Daten
 python3 -m backtest.risk --cache backtest/cache              # Backtest der Risiko-Schicht (danach)
 ```
@@ -90,7 +90,7 @@ Mit einer API-Wallet, die handeln, aber nicht abheben darf:
 
 ```sh
 pip install -r requirements-bot.txt
-cp bot.example.toml bot.toml   # Adresse unter [account]; bot.toml bleibt lokal
+cp config/bot.example.toml bot.toml   # Adresse unter [account]; bot.toml bleibt lokal
 export HL_API_KEY=…            # Schlüssel der API-Wallet, nie in eine Datei im Repo
 python3 -m bot --mode testnet
 ```

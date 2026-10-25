@@ -90,7 +90,7 @@ class Rounds(unittest.TestCase):
         with open(os.path.join(self.state, "screener.json"), "w") as f:
             json.dump(picks(LONGS, int(time.time() * 1000)), f)
         self.fake = FakeInfo()
-        self.cfg = M.load_config(os.path.join(ROOT, "bot.paper.toml"))
+        self.cfg = M.load_config(os.path.join(ROOT, "config", "bot.paper.toml"))
         self.cfg["execution"].update(maker_wait_seconds=0.2, requote_seconds=0.05)
 
     def tearDown(self):
@@ -366,7 +366,7 @@ class ScreenerRetry(unittest.TestCase):
             with open(os.path.join(d, "screener.json"), "w") as f:
                 json.dump(scr, f)
         with mock.patch.object(M, "Info", lambda *a, **k: FakeInfo()):
-            return M.Bot(M.load_config(os.path.join(ROOT, "bot.paper.toml")), "paper", d, Quiet())
+            return M.Bot(M.load_config(os.path.join(ROOT, "config", "bot.paper.toml")), "paper", d, Quiet())
 
     def test_a_failed_run_keeps_the_old_picks_and_waits_before_trying_again(self):
         now = 1_800_000_000_000

@@ -34,7 +34,7 @@ from . import __main__ as B
 DAY = B.DAY
 HOLD = 14
 COST = 0.00035          # per dollar traded when the book changes size (mostly maker, Hyperliquid base fees)
-BOOK = 1.5              # long book per dollar of account, as in bot.paper.toml
+BOOK = 1.5              # long book per dollar of account, as in config/bot.paper.toml
 JUMP_LOSS = 0.05
 
 

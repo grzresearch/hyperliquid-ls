@@ -50,7 +50,7 @@ jobs:
           DATA_URL: ${{ steps.pages.outputs.base_url }}/data
           SCREENER: ${{ github.event.inputs.screener == 'true' && 'now' || 'auto' }}
         run: |
-          python3 -m bot --config bot.paper.toml --once --state-dir state --site site/data \
+          python3 -m bot --config config/bot.paper.toml --once --state-dir state --site site/data \
             --restore "$DATA_URL" --screener "$SCREENER"
 
       - name: Stand merken
@@ -61,7 +61,7 @@ jobs:
           key: bot-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Seite zusammenstellen
-        run: cp index.html manifest.webmanifest icon-192.png icon-512.png apple-touch-icon.png site/
+        run: cp web/index.html web/manifest.webmanifest web/icon-192.png web/icon-512.png web/apple-touch-icon.png site/
 
       - uses: actions/upload-pages-artifact@v3
         with:

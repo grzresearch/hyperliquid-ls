@@ -1,4 +1,5 @@
-# Vorlage für einen eigenen Lauf des Bots. Kopieren nach bot.toml und anpassen; bot.toml ist in .gitignore.
+# Vorlage für einen eigenen Lauf des Bots. Kopieren nach ./bot.toml (Standard von --config) und anpassen; bot.toml
+# ist in .gitignore.
 # Was hier fehlt, nimmt der Bot aus seinen Standardwerten (bot/__main__.py und für [hedge] bot/hedge.py, DEFAULTS).
 
 mode = "paper"            # paper | testnet | mainnet
